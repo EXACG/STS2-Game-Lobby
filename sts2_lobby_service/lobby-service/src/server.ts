@@ -39,26 +39,49 @@ app.get("/rooms", (_req, res) => {
 app.post("/rooms", (req, res, next) => {
   try {
     const body = req.body as Partial<CreateRoomInput> | undefined;
-    const room = store.createRoom(
-      {
-        roomName: requiredString(body?.roomName, "roomName"),
-        password: optionalString(body?.password),
-        hostPlayerName: requiredString(body?.hostPlayerName, "hostPlayerName"),
-        gameMode: requiredString(body?.gameMode, "gameMode"),
-        version: requiredString(body?.version, "version"),
-        modVersion: requiredString(body?.modVersion, "modVersion"),
-        maxPlayers: positiveInt(body?.maxPlayers, "maxPlayers", 1, 8),
-        hostConnectionInfo: {
-          enetPort: positiveInt(body?.hostConnectionInfo?.enetPort, "hostConnectionInfo.enetPort", 1, 65535),
-          localAddresses: Array.isArray(body?.hostConnectionInfo?.localAddresses)
-            ? body?.hostConnectionInfo?.localAddresses
-                .filter((value): value is string => typeof value === "string")
-                .map((value) => value.trim())
-            : [],
-        },
+    const roomInput: CreateRoomInput = {
+      roomName: requiredString(body?.roomName, "roomName"),
+      password: optionalString(body?.password),
+      hostPlayerName: requiredString(body?.hostPlayerName, "hostPlayerName"),
+      gameMode: requiredString(body?.gameMode, "gameMode"),
+      version: requiredString(body?.version, "version"),
+      modVersion: requiredString(body?.modVersion, "modVersion"),
+      maxPlayers: positiveInt(body?.maxPlayers, "maxPlayers", 1, 8),
+      hostConnectionInfo: {
+        enetPort: positiveInt(body?.hostConnectionInfo?.enetPort, "hostConnectionInfo.enetPort", 1, 65535),
+        localAddresses: Array.isArray(body?.hostConnectionInfo?.localAddresses)
+          ? body?.hostConnectionInfo?.localAddresses
+              .filter((value): value is string => typeof value === "string")
+              .map((value) => value.trim())
+          : [],
       },
-      requestIp(req),
-    );
+    };
+
+    if (body?.savedRun) {
+      roomInput.savedRun = {
+        saveKey: requiredString(body.savedRun.saveKey, "savedRun.saveKey"),
+        slots: Array.isArray(body.savedRun.slots)
+          ? body.savedRun.slots
+              .filter((value) => Boolean(value) && typeof value === "object")
+              .map((slot, index) => {
+                const candidate = slot as unknown as Record<string, unknown>;
+                return {
+                  netId: requiredString(candidate.netId, `savedRun.slots[${index}].netId`),
+                  characterId: optionalString(candidate.characterId),
+                  characterName: optionalString(candidate.characterName),
+                  isHost: Boolean(candidate.isHost),
+                };
+              })
+          : [],
+        connectedPlayerNetIds: Array.isArray(body.savedRun.connectedPlayerNetIds)
+          ? body.savedRun.connectedPlayerNetIds
+              .filter((value): value is string => typeof value === "string")
+              .map((value) => value.trim())
+          : [],
+      };
+    }
+
+    const room = store.createRoom(roomInput, requestIp(req));
 
     res.status(201).json(room);
   } catch (error) {
@@ -74,6 +97,7 @@ app.post("/rooms/:id/join", (req, res, next) => {
       password: optionalString(body?.password),
       version: requiredString(body?.version, "version"),
       modVersion: requiredString(body?.modVersion, "modVersion"),
+      desiredSavePlayerNetId: optionalString(body?.desiredSavePlayerNetId),
     });
     res.json(response);
   } catch (error) {
@@ -88,6 +112,11 @@ app.post("/rooms/:id/heartbeat", (req, res, next) => {
       hostToken: requiredString(body?.hostToken, "hostToken"),
       currentPlayers: positiveInt(body?.currentPlayers, "currentPlayers", 1, 8),
       status: requiredString(body?.status, "status"),
+      connectedPlayerNetIds: Array.isArray(body?.connectedPlayerNetIds)
+        ? body.connectedPlayerNetIds
+            .filter((value): value is string => typeof value === "string")
+            .map((value) => value.trim())
+        : undefined,
     });
     res.json({ ok: true, room });
   } catch (error) {

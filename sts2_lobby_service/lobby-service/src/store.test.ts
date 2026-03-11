@@ -118,3 +118,96 @@ test("cleanupExpired deletes rooms after heartbeat timeout", () => {
   assert.deepEqual(deleted, [created.roomId]);
   assert.equal(store.listRooms().length, 0);
 });
+
+test("saved run rooms expose slot occupancy and allow selecting an available slot", () => {
+  const store = new LobbyStore(baseConfig);
+  const created = store.createRoom(
+    {
+      roomName: "续局房间",
+      hostPlayerName: "Host",
+      gameMode: "standard",
+      version: "1.2.3",
+      modVersion: "0.1.0",
+      maxPlayers: 4,
+      hostConnectionInfo: {
+        enetPort: 33771,
+      },
+      savedRun: {
+        saveKey: "save-key-1",
+        slots: [
+          { netId: "1", characterId: "IRONCLAD", characterName: "铁甲战士", isHost: true },
+          { netId: "222", characterId: "SILENT", characterName: "静默猎手", isHost: false },
+        ],
+        connectedPlayerNetIds: ["1"],
+      },
+    },
+    "203.0.113.10",
+  );
+
+  const rooms = store.listRooms();
+  assert.equal(rooms[0]?.savedRun?.slots[0]?.isConnected, true);
+  assert.equal(rooms[0]?.savedRun?.slots[1]?.isConnected, false);
+
+  const joined = store.joinRoom(created.roomId, {
+    playerName: "Guest",
+    version: "1.2.3",
+    modVersion: "0.1.0",
+    desiredSavePlayerNetId: "222",
+  });
+
+  assert.equal(joined.room.savedRun?.saveKey, "save-key-1");
+});
+
+test("saved run rooms reject occupied or ambiguous slot joins", () => {
+  const store = new LobbyStore(baseConfig);
+  const created = store.createRoom(
+    {
+      roomName: "续局房间",
+      hostPlayerName: "Host",
+      gameMode: "standard",
+      version: "1.2.3",
+      modVersion: "0.1.0",
+      maxPlayers: 4,
+      hostConnectionInfo: {
+        enetPort: 33771,
+      },
+      savedRun: {
+        saveKey: "save-key-2",
+        slots: [
+          { netId: "1", characterId: "IRONCLAD", characterName: "铁甲战士", isHost: true },
+          { netId: "222", characterId: "SILENT", characterName: "静默猎手", isHost: false },
+          { netId: "333", characterId: "DEFECT", characterName: "故障体", isHost: false },
+        ],
+        connectedPlayerNetIds: ["1"],
+      },
+    },
+    "203.0.113.10",
+  );
+
+  assert.throws(
+    () =>
+      store.joinRoom(created.roomId, {
+        playerName: "Guest",
+        version: "1.2.3",
+        modVersion: "0.1.0",
+        desiredSavePlayerNetId: "999",
+      }),
+    (error: unknown) =>
+      error instanceof LobbyStoreError &&
+      error.code === "save_slot_invalid" &&
+      error.statusCode === 409,
+  );
+
+  assert.throws(
+    () =>
+      store.joinRoom(created.roomId, {
+        playerName: "Guest",
+        version: "1.2.3",
+        modVersion: "0.1.0",
+      }),
+    (error: unknown) =>
+      error instanceof LobbyStoreError &&
+      error.code === "save_slot_required" &&
+      error.statusCode === 409,
+  );
+});

@@ -22,6 +22,27 @@ export interface ConnectionPlan {
   directCandidates: DirectEndpoint[];
 }
 
+export interface SavedRunSlotInput {
+  netId: string;
+  characterId?: string | undefined;
+  characterName?: string | undefined;
+  isHost?: boolean | undefined;
+}
+
+export interface SavedRunSlot {
+  netId: string;
+  characterId: string;
+  characterName: string;
+  isHost: boolean;
+  isConnected: boolean;
+}
+
+export interface SavedRunInfo {
+  saveKey: string;
+  slots: SavedRunSlot[];
+  connectedPlayerNetIds: string[];
+}
+
 export interface RoomSummary {
   roomId: string;
   roomName: string;
@@ -35,6 +56,7 @@ export interface RoomSummary {
   modVersion: string;
   createdAt: Date;
   lastHeartbeatAt: Date;
+  savedRun?: SavedRunInfo | undefined;
 }
 
 export interface Room extends RoomSummary {
@@ -70,6 +92,11 @@ export interface CreateRoomInput {
     enetPort: number;
     localAddresses?: string[];
   };
+  savedRun?: {
+    saveKey: string;
+    slots: SavedRunSlotInput[];
+    connectedPlayerNetIds?: string[];
+  };
 }
 
 export interface JoinRoomInput {
@@ -77,12 +104,14 @@ export interface JoinRoomInput {
   password?: string | undefined;
   version: string;
   modVersion: string;
+  desiredSavePlayerNetId?: string | undefined;
 }
 
 export interface HeartbeatInput {
   hostToken: string;
   currentPlayers: number;
   status: RoomStatus | string;
+  connectedPlayerNetIds?: string[] | undefined;
 }
 
 export interface StoreConfig {
@@ -139,6 +168,7 @@ export class LobbyStore {
         localAddresses: normalizeAddressList(input.hostConnectionInfo.localAddresses ?? []),
         remoteAddress: normalizeRemoteAddress(remoteAddress),
       },
+      savedRun: normalizeSavedRunInput(input.savedRun),
     };
 
     const hostSession: HostSession = {
@@ -186,6 +216,28 @@ export class LobbyStore {
       throw new LobbyStoreError(401, "invalid_password", "房间密码错误。");
     }
 
+    if (room.savedRun) {
+      const connectedPlayerNetIds = new Set(room.savedRun.connectedPlayerNetIds);
+      const availableSlots = room.savedRun.slots.filter((slot) => !connectedPlayerNetIds.has(slot.netId));
+      if (availableSlots.length === 0) {
+        throw new LobbyStoreError(409, "save_slot_unavailable", "该续局房间当前没有可接管角色。");
+      }
+
+      const desiredSavePlayerNetId = input.desiredSavePlayerNetId?.trim();
+      if (desiredSavePlayerNetId) {
+        const selectedSlot = room.savedRun.slots.find((slot) => slot.netId === desiredSavePlayerNetId);
+        if (!selectedSlot) {
+          throw new LobbyStoreError(409, "save_slot_invalid", "所选续局角色不存在。");
+        }
+
+        if (connectedPlayerNetIds.has(desiredSavePlayerNetId)) {
+          throw new LobbyStoreError(409, "save_slot_unavailable", "所选续局角色已被其他玩家接管。");
+        }
+      } else if (availableSlots.length > 1) {
+        throw new LobbyStoreError(409, "save_slot_required", "该续局房间需要先选择一个可接管角色。");
+      }
+    }
+
     const connectionPlan = buildConnectionPlan(room, hostSession);
     const ticket: JoinTicket = {
       ticketId: randomUUID(),
@@ -214,6 +266,13 @@ export class LobbyStore {
     room.status = normalizeStatus(input.status, room.currentPlayers, room.maxPlayers);
     room.lastHeartbeatAt = now;
     hostSession.lastSeenAt = now;
+    if (room.savedRun && input.connectedPlayerNetIds) {
+      room.savedRun.connectedPlayerNetIds = normalizeNetIdList(input.connectedPlayerNetIds);
+      room.savedRun.slots = room.savedRun.slots.map((slot) => ({
+        ...slot,
+        isConnected: room.savedRun?.connectedPlayerNetIds.includes(slot.netId) ?? false,
+      }));
+    }
     return this.toRoomSummary(room);
   }
 
@@ -328,6 +387,13 @@ export class LobbyStore {
       modVersion: room.modVersion,
       createdAt: room.createdAt,
       lastHeartbeatAt: room.lastHeartbeatAt,
+      savedRun: room.savedRun
+        ? {
+            saveKey: room.savedRun.saveKey,
+            connectedPlayerNetIds: [...room.savedRun.connectedPlayerNetIds],
+            slots: room.savedRun.slots.map((slot) => ({ ...slot })),
+          }
+        : undefined,
     };
   }
 }
@@ -423,6 +489,58 @@ function normalizeAddressList(addresses: string[]) {
   }
 
   return output;
+}
+
+function normalizeSavedRunInput(savedRun: CreateRoomInput["savedRun"]): SavedRunInfo | undefined {
+  if (!savedRun) {
+    return undefined;
+  }
+
+  const saveKey = savedRun.saveKey.trim();
+  const slots = savedRun.slots
+    .map((slot) => ({
+      netId: normalizeNetId(slot.netId),
+      characterId: slot.characterId?.trim() ?? "",
+      characterName: slot.characterName?.trim() ?? "",
+      isHost: Boolean(slot.isHost),
+      isConnected: false,
+    }))
+    .filter((slot, index, source) => source.findIndex((candidate) => candidate.netId === slot.netId) === index);
+
+  if (!saveKey || slots.length === 0) {
+    return undefined;
+  }
+
+  const normalizedConnectedPlayerNetIds = normalizeNetIdList(savedRun.connectedPlayerNetIds ?? []);
+  const connectedPlayerNetIds =
+    normalizedConnectedPlayerNetIds.length > 0
+      ? normalizedConnectedPlayerNetIds
+      : slots.filter((slot) => slot.isHost).map((slot) => slot.netId);
+
+  for (const slot of slots) {
+    slot.isConnected = connectedPlayerNetIds.includes(slot.netId);
+  }
+
+  return {
+    saveKey,
+    slots,
+    connectedPlayerNetIds,
+  };
+}
+
+function normalizeNetIdList(values: string[]) {
+  return values
+    .map((value) => normalizeNetId(value))
+    .filter((value, index, source) => source.indexOf(value) === index);
+}
+
+function normalizeNetId(value: string) {
+  const normalized = value.trim();
+  if (!/^\d+$/.test(normalized)) {
+    throw new LobbyStoreError(400, "invalid_save_net_id", "续局角色 NetId 非法。");
+  }
+
+  return normalized;
 }
 
 function randomToken() {

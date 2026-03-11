@@ -7,6 +7,7 @@
 - 房主心跳与僵尸房间清理
 - 控制通道握手与广播
 - 向客户端返回 `ENet` 直连优先的连接计划
+- 保存续局大厅房间的 `savedRun` 元数据与可接管角色槽位
 
 它不负责：
 
@@ -84,6 +85,19 @@ npm start
 - `POST /rooms/:id/heartbeat`
 - `DELETE /rooms/:id`
 - `WS /control`
+
+当前和续局联机相关的关键字段：
+
+- `POST /rooms`
+  - 支持可选的 `savedRun`
+  - `savedRun.saveKey` 用于把续局存档和大厅房间绑定
+  - `savedRun.slots` 描述每个可接管角色槽位及其 `netId`
+- `POST /rooms/:id/join`
+  - 支持可选的 `desiredSavePlayerNetId`
+  - 当续局房间存在多个空闲角色槽位时，客户端必须显式选择一个槽位再加入
+- `POST /rooms/:id/heartbeat`
+  - 支持上报 `connectedPlayerNetIds`
+  - 服务端会据此更新哪些续局角色槽位当前已被占用
 
 ## 控制通道约定
 
