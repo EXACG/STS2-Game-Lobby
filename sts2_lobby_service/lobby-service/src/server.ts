@@ -37,6 +37,13 @@ const relayManager = new RoomRelayManager(
     clientIdleMs: env.relayClientIdleMs,
   },
   ({ phase, roomId, detail }) => {
+    if (phase === "relay_allocated" || phase === "relay_host_idle") {
+      store.setRelayState(roomId, "planned");
+    } else if (phase === "relay_host_registered") {
+      store.setRelayState(roomId, "ready");
+    } else if (phase === "relay_removed") {
+      store.setRelayState(roomId, "disabled");
+    }
     console.log(`[relay] ${phase} room=${roomId} ${detail}`);
   },
 );
@@ -116,7 +123,7 @@ app.post("/rooms", (req, res, next) => {
       room.relayEndpoint = relayEndpoint;
     }
     console.log(
-      `[lobby] create room roomId=${room.roomId} roomName="${room.room.roomName}" hostPlayer="${room.room.hostPlayerName}" remote=${requestIp(req)} relay=${relayEndpoint ? `${relayEndpoint.host}:${relayEndpoint.port}` : "disabled"}`,
+      `[lobby] create room roomId=${room.roomId} roomName="${room.room.roomName}" hostPlayer="${room.room.hostPlayerName}" version=${room.room.version} modVersion=${room.room.modVersion} remote=${requestIp(req)} relay=${relayEndpoint ? `${relayEndpoint.host}:${relayEndpoint.port}` : "disabled"} relayState=${room.room.relayState}`,
     );
     res.status(201).json(room);
   } catch (error) {
@@ -139,8 +146,9 @@ app.post("/rooms/:id/join", (req, res, next) => {
       response.connectionPlan.relayAllowed = true;
       response.connectionPlan.relayEndpoint = relayEndpoint;
     }
+    const relayStatus = relayManager.getRoomStatus(req.params.id);
     console.log(
-      `[lobby] join ticket issued roomId=${req.params.id} player="${body?.playerName ?? ""}" ticketId=${response.ticketId} remote=${requestIp(req)} direct=${response.connectionPlan.directCandidates.length} relay=${relayEndpoint ? `${relayEndpoint.host}:${relayEndpoint.port}` : "disabled"}`,
+      `[lobby] join ticket issued roomId=${req.params.id} player="${body?.playerName ?? ""}" roomModVersion=${response.room.modVersion} ticketId=${response.ticketId} remote=${requestIp(req)} direct=${response.connectionPlan.directCandidates.length} relay=${relayEndpoint ? `${relayEndpoint.host}:${relayEndpoint.port}` : "disabled"} relayState=${response.room.relayState} relayHost=${relayStatus.hasActiveHost ? relayStatus.activeHostDetail : "unregistered"} relayClients=${relayStatus.clientCount}`,
     );
     res.json(response);
   } catch (error) {
@@ -193,8 +201,9 @@ app.post("/rooms/:id/connection-events", (req, res, next) => {
     const candidateEndpoint = optionalString(body?.candidateEndpoint) ?? "<none>";
     const detail = optionalString(body?.detail) ?? "<none>";
     const playerName = optionalString(body?.playerName) ?? "<unknown>";
+    const relayStatus = relayManager.getRoomStatus(req.params.id);
     console.log(
-      `[lobby] connection_event roomId=${req.params.id} ticketId=${ticketId ?? "<none>"} player="${playerName}" phase=${phase} candidate=${candidateLabel} endpoint=${candidateEndpoint} detail=${detail} remote=${requestIp(req)}`,
+      `[lobby] connection_event roomId=${req.params.id} ticketId=${ticketId ?? "<none>"} player="${playerName}" phase=${phase} candidate=${candidateLabel} endpoint=${candidateEndpoint} detail=${detail} remote=${requestIp(req)} relayHost=${relayStatus.hasActiveHost ? relayStatus.activeHostDetail : "unregistered"} relayClients=${relayStatus.clientCount}`,
     );
     res.status(202).json({ ok: true });
   } catch (error) {

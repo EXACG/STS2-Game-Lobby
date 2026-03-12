@@ -1,7 +1,7 @@
 import { randomBytes, randomUUID, scryptSync, timingSafeEqual } from "node:crypto";
 
 export type RoomStatus = "open" | "starting" | "full" | "closed";
-export type RelayState = "disabled" | "planned";
+export type RelayState = "disabled" | "planned" | "ready";
 
 export interface HostConnectionInfo {
   enetPort: number;
@@ -60,6 +60,7 @@ export interface RoomSummary {
   maxPlayers: number;
   version: string;
   modVersion: string;
+  relayState: RelayState;
   createdAt: Date;
   lastHeartbeatAt: Date;
   savedRun?: SavedRunInfo | undefined;
@@ -185,6 +186,7 @@ export class LobbyStore {
       maxPlayers: input.maxPlayers,
       version: input.version.trim(),
       modVersion: input.modVersion.trim(),
+      relayState: "disabled",
       createdAt: now,
       lastHeartbeatAt: now,
       hostConnectionInfo: {
@@ -335,6 +337,15 @@ export class LobbyStore {
     hostSession.lastSeenAt = now;
   }
 
+  setRelayState(roomId: string, relayState: RelayState) {
+    const hostSession = this.hostSessions.get(roomId);
+    if (!hostSession) {
+      return;
+    }
+
+    hostSession.relayState = relayState;
+  }
+
   validateHostControl(roomId: string, controlChannelId: string, token: string) {
     const hostSession = this.requireHostSession(roomId);
     if (hostSession.controlChannelId !== controlChannelId) {
@@ -417,6 +428,7 @@ export class LobbyStore {
   }
 
   private toRoomSummary(room: Room): RoomSummary {
+    const relayState = this.hostSessions.get(room.roomId)?.relayState ?? "disabled";
     return {
       roomId: room.roomId,
       roomName: room.roomName,
@@ -428,6 +440,7 @@ export class LobbyStore {
       maxPlayers: room.maxPlayers,
       version: room.version,
       modVersion: room.modVersion,
+      relayState,
       createdAt: room.createdAt,
       lastHeartbeatAt: room.lastHeartbeatAt,
       savedRun: room.savedRun

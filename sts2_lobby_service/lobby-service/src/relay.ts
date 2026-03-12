@@ -89,6 +89,22 @@ class RoomRelaySession {
     };
   }
 
+  hasActiveHost() {
+    return this.hostEndpoint != null;
+  }
+
+  getActiveHostDetail() {
+    if (!this.hostEndpoint) {
+      return null;
+    }
+
+    return `${this.hostEndpoint.address}:${this.hostEndpoint.port}`;
+  }
+
+  getClientCount() {
+    return this.clientsById.size;
+  }
+
   cleanup(now = Date.now()) {
     if (this.hostEndpoint && now - this.hostLastSeenAt > this.config.hostIdleMs) {
       this.logEvent({
@@ -269,6 +285,25 @@ export class RoomRelayManager {
 
     session.setAdvertisedHost(advertisedHost);
     return session.getEndpoint();
+  }
+
+  getRoomStatus(roomId: string) {
+    const session = this.sessions.get(roomId);
+    if (!session) {
+      return {
+        hasSession: false,
+        hasActiveHost: false,
+        activeHostDetail: null,
+        clientCount: 0,
+      };
+    }
+
+    return {
+      hasSession: true,
+      hasActiveHost: session.hasActiveHost(),
+      activeHostDetail: session.getActiveHostDetail(),
+      clientCount: session.getClientCount(),
+    };
   }
 
   removeRoom(roomId: string) {

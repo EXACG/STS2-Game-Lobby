@@ -146,8 +146,15 @@ journalctl -u sts2-lobby.service -n 100 --no-pager
 
 - `create room`
 - `join ticket issued`
+- `relay_host_registered`
+- `relay_client_connected`
 - `connection_event ... phase=direct_timeout`
 - `connection_event ... phase=relay_success`
 - `connection_event ... phase=relay_failure`
 - `relay_allocated`
 - `relay_removed`
+
+如果日志里能看到 `create room`、`join ticket issued`，却始终没有 `relay_host_registered`，通常不是服务端 API 挂了，而是客户端到 relay 端口段的 UDP 没有真正打到服务器。常见原因包括：
+
+- 服务器公网 `39000-39063/UDP` 没有放行
+- 客户端启用了 `Clash`、`Surge`、系统全局代理或 `TUN`，大厅服务器 IP 没有走 `DIRECT`
