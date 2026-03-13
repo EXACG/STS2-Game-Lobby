@@ -221,6 +221,11 @@ Write-Info "Installing mod files to: $targetModDir"
 Copy-Item -Path (Join-Path $resolvedPackageDir "$AssemblyName.dll") -Destination $targetModDir -Force
 Copy-Item -Path (Join-Path $resolvedPackageDir "$AssemblyName.pck") -Destination $targetModDir -Force
 
+$manifestFile = Join-Path $resolvedPackageDir "mod_manifest.json"
+if (Test-Path $manifestFile) {
+    Copy-Item -Path $manifestFile -Destination $targetModDir -Force
+}
+
 $defaultsFile = Join-Path $resolvedPackageDir "lobby-defaults.json"
 $installedDefaultsFile = Join-Path $targetModDir "lobby-defaults.json"
 if (Test-Path $installedDefaultsFile) {

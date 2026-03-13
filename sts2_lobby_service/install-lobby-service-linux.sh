@@ -32,6 +32,9 @@ RELAY_PORT_START="${STS2_LOBBY_RELAY_PORT_START:-39000}"
 RELAY_PORT_END="${STS2_LOBBY_RELAY_PORT_END:-39063}"
 RELAY_HOST_IDLE_SECONDS="${STS2_LOBBY_RELAY_HOST_IDLE_SECONDS:-20}"
 RELAY_CLIENT_IDLE_SECONDS="${STS2_LOBBY_RELAY_CLIENT_IDLE_SECONDS:-90}"
+STRICT_GAME_VERSION_CHECK="${STS2_LOBBY_STRICT_GAME_VERSION_CHECK:-true}"
+STRICT_MOD_VERSION_CHECK="${STS2_LOBBY_STRICT_MOD_VERSION_CHECK:-true}"
+CONNECTION_STRATEGY="${STS2_LOBBY_CONNECTION_STRATEGY:-direct-first}"
 NODE_BIN="${NODE_BIN:-$(command -v node || true)}"
 NPM_BIN="${NPM_BIN:-$(command -v npm || true)}"
 SKIP_SYSTEMD=0
@@ -57,6 +60,12 @@ Options:
                         RELAY_PORT_START written into .env. Default: 39000
   --relay-port-end <value>
                         RELAY_PORT_END written into .env. Default: 39063
+  --strict-game-version-check <true|false>
+                        STRICT_GAME_VERSION_CHECK written into .env. Default: true
+  --strict-mod-version-check <true|false>
+                        STRICT_MOD_VERSION_CHECK written into .env. Default: true
+  --connection-strategy <direct-first|relay-first|relay-only>
+                        CONNECTION_STRATEGY written into .env. Default: direct-first
   --run-user <name>     systemd User value when auto-installing the service.
   --run-group <name>    systemd Group value when auto-installing the service.
   --skip-systemd        Only install files and build the service; do not create/start systemd unit.
@@ -125,6 +134,21 @@ while [[ $# -gt 0 ]]; do
     --relay-port-end)
       [[ $# -ge 2 ]] || die "--relay-port-end requires a value"
       RELAY_PORT_END="$2"
+      shift 2
+      ;;
+    --strict-game-version-check)
+      [[ $# -ge 2 ]] || die "--strict-game-version-check requires a value"
+      STRICT_GAME_VERSION_CHECK="$2"
+      shift 2
+      ;;
+    --strict-mod-version-check)
+      [[ $# -ge 2 ]] || die "--strict-mod-version-check requires a value"
+      STRICT_MOD_VERSION_CHECK="$2"
+      shift 2
+      ;;
+    --connection-strategy)
+      [[ $# -ge 2 ]] || die "--connection-strategy requires a value"
+      CONNECTION_STRATEGY="$2"
       shift 2
       ;;
     --run-user)
@@ -201,6 +225,9 @@ RELAY_PORT_START=$RELAY_PORT_START
 RELAY_PORT_END=$RELAY_PORT_END
 RELAY_HOST_IDLE_SECONDS=$RELAY_HOST_IDLE_SECONDS
 RELAY_CLIENT_IDLE_SECONDS=$RELAY_CLIENT_IDLE_SECONDS
+STRICT_GAME_VERSION_CHECK=$STRICT_GAME_VERSION_CHECK
+STRICT_MOD_VERSION_CHECK=$STRICT_MOD_VERSION_CHECK
+CONNECTION_STRATEGY=$CONNECTION_STRATEGY
 EOF
   log "Created default environment file: $ENV_FILE"
 else

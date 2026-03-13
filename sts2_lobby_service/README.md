@@ -87,6 +87,9 @@ npm start
 - `RELAY_PORT_END`
 - `RELAY_HOST_IDLE_SECONDS`
 - `RELAY_CLIENT_IDLE_SECONDS`
+- `STRICT_GAME_VERSION_CHECK`
+- `STRICT_MOD_VERSION_CHECK`
+- `CONNECTION_STRATEGY`
 
 示例见 [lobby-service/.env.example](/Users/mac/Desktop/STS2_Learner/lobby-service/.env.example)。
 

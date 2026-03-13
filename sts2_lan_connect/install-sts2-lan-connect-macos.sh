@@ -7,9 +7,11 @@ DEFAULT_GAME_DIR="${STS2_ROOT:-$HOME/Library/Application Support/Steam/steamapps
 DEFAULT_APP_PATH="${STS2_APP_PATH:-$DEFAULT_GAME_DIR/SlayTheSpire2.app}"
 DEFAULT_USERDATA_DIR="${STS2_USERDATA_DIR:-$HOME/Library/Application Support/SlayTheSpire2}"
 PACKAGE_DIR="${PACKAGE_DIR:-$SCRIPT_DIR}"
+CODESIGN_BIN="${CODESIGN_BIN:-$(command -v codesign || true)}"
 APP_PATH="$DEFAULT_APP_PATH"
 USERDATA_DIR="$DEFAULT_USERDATA_DIR"
 SYNC_SAVES=1
+REFRESH_SIGNATURE=1
 ACTION="toggle"
 
 usage() {
@@ -25,6 +27,7 @@ Options:
   --data-dir <path>     SlayTheSpire2 user data directory.
   --package-dir <path>  Directory that contains sts2_lan_connect.dll/.pck.
   --no-save-sync        Install only; skip save migration/sync.
+  --skip-codesign       Skip refreshing the macOS app bundle signature after install/uninstall.
   --help                Show this help.
 
 Default behavior:
@@ -33,14 +36,17 @@ Default behavior:
 
 Install behavior:
   1. Copies the mod files into the game's mods/sts2_lan_connect directory.
-  2. Copies lobby-defaults.json when present in the package.
-  3. Performs a one-way sync from non-modded saves into modded saves unless --no-save-sync is used.
+  2. Copies mod_manifest.json and lobby-defaults.json when present in the package.
+  3. Refreshes the macOS app bundle signature unless --skip-codesign is used.
+  4. Performs a one-way sync from non-modded saves into modded saves unless --no-save-sync is used.
 
 Uninstall behavior:
   1. Removes the game's mods/sts2_lan_connect directory.
+  2. Refreshes the macOS app bundle signature unless --skip-codesign is used.
 
 Notes:
   - Close the game before running this script.
+  - Do not hand-copy files into SlayTheSpire2.app on macOS; use this installer so the app bundle signature stays launchable.
   - Re-run the script any time you want to re-sync vanilla saves into modded saves.
 EOF
 }
@@ -60,10 +66,48 @@ is_mod_installed() {
   find "$mod_dir" -mindepth 1 -maxdepth 1 -print -quit | grep -q .
 }
 
+ensure_game_not_running() {
+  if pgrep -f '/SlayTheSpire2.app/Contents/MacOS/Slay the Spire 2' >/dev/null 2>&1; then
+    die "Slay the Spire 2 is still running. Close the game before installing or uninstalling the mod."
+  fi
+}
+
 validate_package_dir() {
   if [[ ! -f "$PACKAGE_DIR/$ASSEMBLY_NAME.dll" || ! -f "$PACKAGE_DIR/$ASSEMBLY_NAME.pck" ]]; then
     die "Package directory '$PACKAGE_DIR' does not contain $ASSEMBLY_NAME.dll and $ASSEMBLY_NAME.pck"
   fi
+}
+
+migrate_legacy_config_if_needed() {
+  local mod_dir="$1"
+  local legacy_config="$mod_dir/config.json"
+  local target_config="$USERDATA_DIR/$ASSEMBLY_NAME/config.json"
+
+  if [[ ! -f "$legacy_config" ]]; then
+    return
+  fi
+
+  mkdir -p "$(dirname "$target_config")"
+  if [[ ! -f "$target_config" || "$legacy_config" -nt "$target_config" ]]; then
+    cp -f "$legacy_config" "$target_config"
+    log "Migrated legacy config.json into user data: $target_config"
+  fi
+}
+
+refresh_app_signature() {
+  if [[ "$REFRESH_SIGNATURE" -eq 0 ]]; then
+    log "Skipping app bundle signature refresh (--skip-codesign)."
+    return
+  fi
+
+  if [[ -z "$CODESIGN_BIN" || ! -x "$CODESIGN_BIN" ]]; then
+    die "codesign not found. Re-run with --skip-codesign only if you accept the risk that the game may stop launching."
+  fi
+
+  log "Refreshing macOS app bundle signature: $APP_PATH"
+  "$CODESIGN_BIN" --force --deep --sign - "$APP_PATH" >/dev/null
+  "$CODESIGN_BIN" --verify --deep --strict --verbose=2 "$APP_PATH" >/dev/null
+  log "App bundle signature refreshed."
 }
 
 uninstall_mod() {
@@ -74,8 +118,10 @@ uninstall_mod() {
     exit 0
   fi
 
+  migrate_legacy_config_if_needed "$mod_dir"
   log "Uninstalling mod from: $mod_dir"
   rm -rf "$mod_dir"
+  refresh_app_signature
   log "Mod uninstalled."
 }
 
@@ -133,21 +179,33 @@ sync_profile_saves() {
 
 install_mod() {
   local mod_dir="$1"
+  local temp_mod_dir
 
   validate_package_dir
 
-  mkdir -p "$mod_dir"
+  temp_mod_dir="${mod_dir}.tmp.$$"
+
+  migrate_legacy_config_if_needed "$mod_dir"
+  rm -rf "$temp_mod_dir"
+  mkdir -p "$temp_mod_dir"
 
   log "Installing mod files to: $mod_dir"
-  cp -f "$PACKAGE_DIR/$ASSEMBLY_NAME.dll" "$mod_dir/"
-  cp -f "$PACKAGE_DIR/$ASSEMBLY_NAME.pck" "$mod_dir/"
-  rm -f "$mod_dir/lobby-defaults.json"
+  cp -f "$PACKAGE_DIR/$ASSEMBLY_NAME.dll" "$temp_mod_dir/"
+  cp -f "$PACKAGE_DIR/$ASSEMBLY_NAME.pck" "$temp_mod_dir/"
+  if [[ -f "$PACKAGE_DIR/mod_manifest.json" ]]; then
+    cp -f "$PACKAGE_DIR/mod_manifest.json" "$temp_mod_dir/"
+  fi
   if [[ -f "$PACKAGE_DIR/lobby-defaults.json" ]]; then
-    cp -f "$PACKAGE_DIR/lobby-defaults.json" "$mod_dir/"
+    cp -f "$PACKAGE_DIR/lobby-defaults.json" "$temp_mod_dir/"
   fi
   if [[ -f "$PACKAGE_DIR/STS2_LAN_CONNECT_USER_GUIDE_ZH.md" ]]; then
-    cp -f "$PACKAGE_DIR/STS2_LAN_CONNECT_USER_GUIDE_ZH.md" "$mod_dir/"
+    cp -f "$PACKAGE_DIR/STS2_LAN_CONNECT_USER_GUIDE_ZH.md" "$temp_mod_dir/"
   fi
+
+  mkdir -p "$(dirname "$mod_dir")"
+  rm -rf "$mod_dir"
+  mv "$temp_mod_dir" "$mod_dir"
+  refresh_app_signature
 
   if [[ "$SYNC_SAVES" -eq 0 ]]; then
     log "Save sync skipped (--no-save-sync)."
@@ -214,6 +272,10 @@ while [[ $# -gt 0 ]]; do
       SYNC_SAVES=0
       shift
       ;;
+    --skip-codesign)
+      REFRESH_SIGNATURE=0
+      shift
+      ;;
     --help|-h)
       usage
       exit 0
@@ -227,6 +289,8 @@ done
 if [[ ! -d "$APP_PATH" ]]; then
   die "Could not find SlayTheSpire2.app at '$APP_PATH'"
 fi
+
+ensure_game_not_running
 
 TARGET_MOD_DIR="$APP_PATH/Contents/MacOS/mods/$ASSEMBLY_NAME"
 EFFECTIVE_ACTION="$ACTION"

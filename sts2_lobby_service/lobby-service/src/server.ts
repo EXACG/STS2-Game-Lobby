@@ -1,10 +1,12 @@
 import express, { type NextFunction, type Request, type Response } from "express";
 import { createServer } from "node:http";
 import { WebSocketServer, type WebSocket } from "ws";
+import { assertRelayJoinReady } from "./join-guard.js";
 import { RoomRelayManager } from "./relay.js";
 import {
   LobbyStore,
   LobbyStoreError,
+  type ConnectionStrategy,
   type CreateRoomInput,
   type HeartbeatInput,
   type JoinRoomInput,
@@ -22,11 +24,17 @@ const env = {
   relayPortEnd: Number.parseInt(process.env.RELAY_PORT_END ?? "39063", 10),
   relayHostIdleMs: Number.parseInt(process.env.RELAY_HOST_IDLE_SECONDS ?? "20", 10) * 1000,
   relayClientIdleMs: Number.parseInt(process.env.RELAY_CLIENT_IDLE_SECONDS ?? "90", 10) * 1000,
+  strictGameVersionCheck: parseBooleanEnv(process.env.STRICT_GAME_VERSION_CHECK, true),
+  strictModVersionCheck: parseBooleanEnv(process.env.STRICT_MOD_VERSION_CHECK, true),
+  connectionStrategy: parseConnectionStrategyEnv(process.env.CONNECTION_STRATEGY),
 };
 
 const store = new LobbyStore({
   heartbeatTimeoutMs: env.heartbeatTimeoutMs,
   ticketTtlMs: env.ticketTtlMs,
+  strictGameVersionCheck: env.strictGameVersionCheck,
+  strictModVersionCheck: env.strictModVersionCheck,
+  connectionStrategy: env.connectionStrategy,
 });
 const relayManager = new RoomRelayManager(
   {
@@ -65,6 +73,9 @@ app.get("/health", (_req, res) => {
   res.json({
     ok: true,
     rooms: store.listRooms().length,
+    strictGameVersionCheck: env.strictGameVersionCheck,
+    strictModVersionCheck: env.strictModVersionCheck,
+    connectionStrategy: env.connectionStrategy,
   });
 });
 
@@ -147,8 +158,9 @@ app.post("/rooms/:id/join", (req, res, next) => {
       response.connectionPlan.relayEndpoint = relayEndpoint;
     }
     const relayStatus = relayManager.getRoomStatus(req.params.id);
+    assertRelayJoinReady(env.connectionStrategy, response.room.relayState, relayStatus.hasActiveHost);
     console.log(
-      `[lobby] join ticket issued roomId=${req.params.id} player="${body?.playerName ?? ""}" roomModVersion=${response.room.modVersion} ticketId=${response.ticketId} remote=${requestIp(req)} direct=${response.connectionPlan.directCandidates.length} relay=${relayEndpoint ? `${relayEndpoint.host}:${relayEndpoint.port}` : "disabled"} relayState=${response.room.relayState} relayHost=${relayStatus.hasActiveHost ? relayStatus.activeHostDetail : "unregistered"} relayClients=${relayStatus.clientCount}`,
+      `[lobby] join ticket issued roomId=${req.params.id} player="${body?.playerName ?? ""}" roomModVersion=${response.room.modVersion} ticketId=${response.ticketId} remote=${requestIp(req)} strategy=${response.connectionPlan.strategy} direct=${response.connectionPlan.directCandidates.length} relay=${relayEndpoint ? `${relayEndpoint.host}:${relayEndpoint.port}` : "disabled"} relayState=${response.room.relayState} relayHost=${relayStatus.hasActiveHost ? relayStatus.activeHostDetail : "unregistered"} relayClients=${relayStatus.clientCount}`,
     );
     res.json(response);
   } catch (error) {
@@ -273,39 +285,48 @@ wss.on("connection", (socket, req) => {
     });
 
     socket.on("message", (payload) => {
-      peer.lastSeenAt = Date.now();
-      if (peer.role === "host") {
-        store.touchHostSession(peer.roomId);
-      }
+      try {
+        peer.lastSeenAt = Date.now();
+        if (peer.role === "host") {
+          store.touchHostSession(peer.roomId);
+        }
 
-      const parsed = parseEnvelope(payload);
-      if (!parsed) {
-        sendJson(socket, {
-          type: "error",
-          message: "无法解析控制通道消息。",
-        });
-        return;
-      }
+        const parsed = parseEnvelope(payload);
+        if (!parsed) {
+          sendJson(socket, {
+            type: "error",
+            message: "无法解析控制通道消息。",
+          });
+          return;
+        }
 
-      if (parsed.type === "ping") {
-        sendJson(socket, {
-          type: "pong",
+        if (parsed.type === "ping") {
+          sendJson(socket, {
+            type: "pong",
+            roomId: peer.roomId,
+            controlChannelId: peer.controlChannelId,
+          });
+          return;
+        }
+
+        if (parsed.type === "pong" || parsed.type === "host_hello" || parsed.type === "client_hello") {
+          return;
+        }
+
+        broadcastToRoom(peer, {
+          ...parsed,
           roomId: peer.roomId,
           controlChannelId: peer.controlChannelId,
+          role: peer.role,
         });
-        return;
+      } catch (error) {
+        const lobbyError = error instanceof LobbyStoreError ? `${error.code}: ${error.message}` : null;
+        console.warn(
+          `[control] peer message ignored roomId=${peer.roomId} role=${peer.role} reason=${lobbyError ?? "unexpected_error"}`,
+        );
+        const closeReason = error instanceof Error ? error.message : "control_message_error";
+        socket.close(1008, closeReason);
       }
-
-      if (parsed.type === "pong" || parsed.type === "host_hello" || parsed.type === "client_hello") {
-        return;
-      }
-
-      broadcastToRoom(peer, {
-        ...parsed,
-        roomId: peer.roomId,
-        controlChannelId: peer.controlChannelId,
-        role: peer.role,
-      });
     });
 
     socket.on("close", () => {
@@ -455,6 +476,32 @@ function optionalString(value: unknown) {
 
   const trimmed = value.trim();
   return trimmed === "" ? undefined : trimmed;
+}
+
+function parseBooleanEnv(value: string | undefined, fallback: boolean) {
+  if (value == null || value.trim() === "") {
+    return fallback;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  if (normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "on") {
+    return true;
+  }
+
+  if (normalized === "0" || normalized === "false" || normalized === "no" || normalized === "off") {
+    return false;
+  }
+
+  throw new Error(`Invalid boolean env value: ${value}`);
+}
+
+function parseConnectionStrategyEnv(value: string | undefined): ConnectionStrategy {
+  const normalized = value?.trim().toLowerCase() ?? "direct-first";
+  if (normalized === "direct-first" || normalized === "relay-first" || normalized === "relay-only") {
+    return normalized;
+  }
+
+  throw new Error(`Invalid CONNECTION_STRATEGY value: ${value}`);
 }
 
 function positiveInt(value: unknown, name: string, min: number, max: number) {

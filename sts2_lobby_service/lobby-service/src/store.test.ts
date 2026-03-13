@@ -5,6 +5,9 @@ import { LobbyStore, LobbyStoreError } from "./store.js";
 const baseConfig = {
   heartbeatTimeoutMs: 35_000,
   ticketTtlMs: 120_000,
+  strictGameVersionCheck: true,
+  strictModVersionCheck: true,
+  connectionStrategy: "direct-first" as const,
 };
 
 test("createRoom exposes room summary in listRooms", () => {
@@ -210,4 +213,102 @@ test("saved run rooms reject occupied or ambiguous slot joins", () => {
       error.code === "save_slot_required" &&
       error.statusCode === 409,
   );
+});
+
+test("joinRoom rejects rooms that already started", () => {
+  const store = new LobbyStore(baseConfig);
+  const created = store.createRoom(
+    {
+      roomName: "已开局房间",
+      hostPlayerName: "Host",
+      gameMode: "standard",
+      version: "1.2.3",
+      modVersion: "0.1.0",
+      maxPlayers: 4,
+      hostConnectionInfo: {
+        enetPort: 33771,
+      },
+    },
+    "203.0.113.10",
+  );
+
+  store.heartbeat(created.roomId, {
+    hostToken: created.hostToken,
+    currentPlayers: 2,
+    status: "starting",
+  });
+
+  assert.throws(
+    () =>
+      store.joinRoom(created.roomId, {
+        playerName: "Guest",
+        version: "1.2.3",
+        modVersion: "0.1.0",
+      }),
+    (error: unknown) =>
+      error instanceof LobbyStoreError &&
+      error.code === "room_started" &&
+      error.statusCode === 409,
+  );
+});
+
+test("relaxed compatibility can skip game and mod version checks", () => {
+  const store = new LobbyStore({
+    ...baseConfig,
+    strictGameVersionCheck: false,
+    strictModVersionCheck: false,
+  });
+  const created = store.createRoom(
+    {
+      roomName: "测试兼容房间",
+      hostPlayerName: "Host",
+      gameMode: "standard",
+      version: "2026.3.13-mobile",
+      modVersion: "cross-end-preview",
+      maxPlayers: 4,
+      hostConnectionInfo: {
+        enetPort: 33771,
+      },
+    },
+    "203.0.113.10",
+  );
+
+  const joined = store.joinRoom(created.roomId, {
+    playerName: "Guest",
+    version: "2026.3.13-pc",
+    modVersion: "test-build",
+  });
+
+  assert.equal(joined.room.roomId, created.roomId);
+});
+
+test("relay-only strategy omits direct candidates", () => {
+  const store = new LobbyStore({
+    ...baseConfig,
+    connectionStrategy: "relay-only",
+  });
+  const created = store.createRoom(
+    {
+      roomName: "只走 relay",
+      hostPlayerName: "Host",
+      gameMode: "standard",
+      version: "1.2.3",
+      modVersion: "0.1.0",
+      maxPlayers: 4,
+      hostConnectionInfo: {
+        enetPort: 33771,
+        localAddresses: ["192.168.1.10"],
+      },
+    },
+    "203.0.113.10",
+  );
+
+  const joined = store.joinRoom(created.roomId, {
+    playerName: "Guest",
+    version: "1.2.3",
+    modVersion: "0.1.0",
+  });
+
+  assert.equal(joined.connectionPlan.strategy, "relay-only");
+  assert.deepEqual(joined.connectionPlan.directCandidates, []);
 });

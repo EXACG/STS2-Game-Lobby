@@ -2,6 +2,7 @@ import { randomBytes, randomUUID, scryptSync, timingSafeEqual } from "node:crypt
 
 export type RoomStatus = "open" | "starting" | "full" | "closed";
 export type RelayState = "disabled" | "planned" | "ready";
+export type ConnectionStrategy = "direct-first" | "relay-first" | "relay-only";
 
 export interface HostConnectionInfo {
   enetPort: number;
@@ -21,7 +22,7 @@ export interface RelayEndpoint {
 }
 
 export interface ConnectionPlan {
-  strategy: "direct-first";
+  strategy: ConnectionStrategy;
   relayAllowed: boolean;
   controlChannelId: string;
   directCandidates: DirectEndpoint[];
@@ -124,6 +125,9 @@ export interface HeartbeatInput {
 export interface StoreConfig {
   heartbeatTimeoutMs: number;
   ticketTtlMs: number;
+  strictGameVersionCheck?: boolean;
+  strictModVersionCheck?: boolean;
+  connectionStrategy?: ConnectionStrategy;
 }
 
 export interface CreateRoomResult {
@@ -158,8 +162,17 @@ export class LobbyStore {
   private readonly rooms = new Map<string, Room>();
   private readonly tickets = new Map<string, JoinTicket>();
   private readonly hostSessions = new Map<string, HostSession>();
+  private readonly config: Required<StoreConfig>;
 
-  constructor(private readonly config: StoreConfig) {}
+  constructor(config: StoreConfig) {
+    this.config = {
+      heartbeatTimeoutMs: config.heartbeatTimeoutMs,
+      ticketTtlMs: config.ticketTtlMs,
+      strictGameVersionCheck: config.strictGameVersionCheck ?? true,
+      strictModVersionCheck: config.strictModVersionCheck ?? true,
+      connectionStrategy: config.connectionStrategy ?? "direct-first",
+    };
+  }
 
   listRooms(now = new Date()): RoomSummary[] {
     this.cleanupExpired(now);
@@ -221,21 +234,35 @@ export class LobbyStore {
     this.cleanupExpired(now);
     const room = this.requireRoom(roomId);
     const hostSession = this.requireHostSession(roomId);
+    const requestedVersion = input.version.trim();
+    const requestedModVersion = input.modVersion.trim();
 
     if (room.status === "closed") {
       throw new LobbyStoreError(410, "room_closed", "该房间已经关闭。");
+    }
+
+    if (room.status === "starting") {
+      throw new LobbyStoreError(409, "room_started", "该房间已经开始游戏，当前不允许再加入。");
     }
 
     if (room.currentPlayers >= room.maxPlayers) {
       throw new LobbyStoreError(409, "room_full", "该房间已满。");
     }
 
-    if (room.version !== input.version.trim()) {
-      throw new LobbyStoreError(409, "version_mismatch", "游戏版本不匹配。");
+    if (this.config.strictGameVersionCheck && room.version !== requestedVersion) {
+      throw new LobbyStoreError(
+        409,
+        "version_mismatch",
+        `游戏版本不匹配。房间版本：${room.version}；当前客户端版本：${requestedVersion}。`,
+      );
     }
 
-    if (room.modVersion !== input.modVersion.trim()) {
-      throw new LobbyStoreError(409, "mod_version_mismatch", "MOD 版本不匹配。");
+    if (this.config.strictModVersionCheck && room.modVersion !== requestedModVersion) {
+      throw new LobbyStoreError(
+        409,
+        "mod_version_mismatch",
+        `MOD 版本不匹配。房间版本：${room.modVersion}；当前客户端版本：${requestedModVersion}。`,
+      );
     }
 
     if (room.requiresPassword && !verifyPassword(input.password ?? "", room.passwordHash)) {
@@ -264,7 +291,7 @@ export class LobbyStore {
       }
     }
 
-    const connectionPlan = buildConnectionPlan(room, hostSession);
+    const connectionPlan = buildConnectionPlan(room, hostSession, this.config.connectionStrategy);
     const ticket: JoinTicket = {
       ticketId: randomUUID(),
       roomId,
@@ -454,7 +481,7 @@ export class LobbyStore {
   }
 }
 
-function buildConnectionPlan(room: Room, hostSession: HostSession): ConnectionPlan {
+function buildConnectionPlan(room: Room, hostSession: HostSession, strategy: ConnectionStrategy): ConnectionPlan {
   const directCandidates: DirectEndpoint[] = [];
   const seen = new Set<string>();
   const pushCandidate = (label: string, ip: string) => {
@@ -471,13 +498,15 @@ function buildConnectionPlan(room: Room, hostSession: HostSession): ConnectionPl
     });
   };
 
-  pushCandidate("public", room.hostConnectionInfo.remoteAddress);
-  room.hostConnectionInfo.localAddresses.forEach((ip, index) => {
-    pushCandidate(`lan_${index + 1}`, ip);
-  });
+  if (strategy !== "relay-only") {
+    pushCandidate("public", room.hostConnectionInfo.remoteAddress);
+    room.hostConnectionInfo.localAddresses.forEach((ip, index) => {
+      pushCandidate(`lan_${index + 1}`, ip);
+    });
+  }
 
   return {
-    strategy: "direct-first",
+    strategy,
     relayAllowed: false,
     controlChannelId: hostSession.controlChannelId,
     directCandidates,
