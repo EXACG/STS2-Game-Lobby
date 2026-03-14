@@ -23,18 +23,18 @@ INSTALL_DIR="$DEFAULT_INSTALL_DIR"
 SERVICE_NAME="${STS2_LOBBY_SERVICE_NAME:-sts2-lobby}"
 HOST="${STS2_LOBBY_HOST:-0.0.0.0}"
 PORT="${STS2_LOBBY_PORT:-8787}"
-HEARTBEAT_TIMEOUT_SECONDS="${STS2_HEARTBEAT_TIMEOUT_SECONDS:-35}"
+HEARTBEAT_TIMEOUT_SECONDS="${STS2_HEARTBEAT_TIMEOUT_SECONDS:-60}"
 TICKET_TTL_SECONDS="${STS2_TICKET_TTL_SECONDS:-120}"
 WS_PATH="${STS2_LOBBY_WS_PATH:-/control}"
 RELAY_BIND_HOST="${STS2_LOBBY_RELAY_BIND_HOST:-$HOST}"
 RELAY_PUBLIC_HOST="${STS2_LOBBY_RELAY_PUBLIC_HOST:-}"
 RELAY_PORT_START="${STS2_LOBBY_RELAY_PORT_START:-39000}"
-RELAY_PORT_END="${STS2_LOBBY_RELAY_PORT_END:-39063}"
-RELAY_HOST_IDLE_SECONDS="${STS2_LOBBY_RELAY_HOST_IDLE_SECONDS:-20}"
-RELAY_CLIENT_IDLE_SECONDS="${STS2_LOBBY_RELAY_CLIENT_IDLE_SECONDS:-90}"
-STRICT_GAME_VERSION_CHECK="${STS2_LOBBY_STRICT_GAME_VERSION_CHECK:-true}"
-STRICT_MOD_VERSION_CHECK="${STS2_LOBBY_STRICT_MOD_VERSION_CHECK:-true}"
-CONNECTION_STRATEGY="${STS2_LOBBY_CONNECTION_STRATEGY:-direct-first}"
+RELAY_PORT_END="${STS2_LOBBY_RELAY_PORT_END:-39511}"
+RELAY_HOST_IDLE_SECONDS="${STS2_LOBBY_RELAY_HOST_IDLE_SECONDS:-90}"
+RELAY_CLIENT_IDLE_SECONDS="${STS2_LOBBY_RELAY_CLIENT_IDLE_SECONDS:-180}"
+STRICT_GAME_VERSION_CHECK="${STS2_LOBBY_STRICT_GAME_VERSION_CHECK:-false}"
+STRICT_MOD_VERSION_CHECK="${STS2_LOBBY_STRICT_MOD_VERSION_CHECK:-false}"
+CONNECTION_STRATEGY="${STS2_LOBBY_CONNECTION_STRATEGY:-relay-first}"
 NODE_BIN="${NODE_BIN:-$(command -v node || true)}"
 NPM_BIN="${NPM_BIN:-$(command -v npm || true)}"
 SKIP_SYSTEMD=0
@@ -59,13 +59,13 @@ Options:
   --relay-port-start <value>
                         RELAY_PORT_START written into .env. Default: 39000
   --relay-port-end <value>
-                        RELAY_PORT_END written into .env. Default: 39063
+                        RELAY_PORT_END written into .env. Default: 39511
   --strict-game-version-check <true|false>
-                        STRICT_GAME_VERSION_CHECK written into .env. Default: true
+                        STRICT_GAME_VERSION_CHECK written into .env. Default: false
   --strict-mod-version-check <true|false>
-                        STRICT_MOD_VERSION_CHECK written into .env. Default: true
+                        STRICT_MOD_VERSION_CHECK written into .env. Default: false
   --connection-strategy <direct-first|relay-first|relay-only>
-                        CONNECTION_STRATEGY written into .env. Default: direct-first
+                        CONNECTION_STRATEGY written into .env. Default: relay-first
   --run-user <name>     systemd User value when auto-installing the service.
   --run-group <name>    systemd Group value when auto-installing the service.
   --skip-systemd        Only install files and build the service; do not create/start systemd unit.

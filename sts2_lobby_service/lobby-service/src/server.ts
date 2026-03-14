@@ -22,7 +22,7 @@ const env = {
   relayBindHost: process.env.RELAY_BIND_HOST ?? process.env.HOST ?? "0.0.0.0",
   relayPublicHost: process.env.RELAY_PUBLIC_HOST ?? "",
   relayPortStart: Number.parseInt(process.env.RELAY_PORT_START ?? "39000", 10),
-  relayPortEnd: Number.parseInt(process.env.RELAY_PORT_END ?? "39063", 10),
+  relayPortEnd: Number.parseInt(process.env.RELAY_PORT_END ?? "39511", 10),
   relayHostIdleMs: Number.parseInt(process.env.RELAY_HOST_IDLE_SECONDS ?? "20", 10) * 1000,
   relayClientIdleMs: Number.parseInt(process.env.RELAY_CLIENT_IDLE_SECONDS ?? "90", 10) * 1000,
   strictGameVersionCheck: parseBooleanEnv(process.env.STRICT_GAME_VERSION_CHECK, true),

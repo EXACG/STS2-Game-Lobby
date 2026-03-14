@@ -49,5 +49,5 @@
 公网部署提醒：
 
 - 大厅 API 需要放行 `8787/TCP`
-- relay fallback 需要额外放行 `39000-39063/UDP`
+- relay fallback 需要额外放行 `39000-39511/UDP`
 - 如果客户端启用了 `Clash`、`Surge`、系统全局代理或 `TUN`，请让大厅服务器 IP 走 `DIRECT`

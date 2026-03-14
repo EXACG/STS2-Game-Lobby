@@ -55,12 +55,12 @@ npm start
 
 - HTTP: `http://0.0.0.0:8787`
 - WebSocket: `ws://0.0.0.0:8787/control`
-- Relay UDP: `udp://0.0.0.0:39000-39063`
+- Relay UDP: `udp://0.0.0.0:39000-39511`
 
 公网部署时至少需要放行：
 
 - `8787/TCP`
-- `39000-39063/UDP`
+- `39000-39511/UDP`
 
 ## 打包分发
 
@@ -170,5 +170,5 @@ journalctl -u sts2-lobby.service -n 100 --no-pager
 
 如果日志里能看到 `create room`、`join ticket issued`，却始终没有 `relay_host_registered`，通常不是服务端 API 挂了，而是客户端到 relay 端口段的 UDP 没有真正打到服务器。常见原因包括：
 
-- 服务器公网 `39000-39063/UDP` 没有放行
+- 服务器公网 `39000-39511/UDP` 没有放行
 - 客户端启用了 `Clash`、`Surge`、系统全局代理或 `TUN`，大厅服务器 IP 没有走 `DIRECT`
