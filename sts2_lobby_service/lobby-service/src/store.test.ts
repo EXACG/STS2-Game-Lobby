@@ -34,6 +34,51 @@ test("createRoom exposes room summary in listRooms", () => {
   assert.equal(rooms[0]?.requiresPassword, false);
 });
 
+test("listRooms stays stable when heartbeat updates last seen time", () => {
+  const store = new LobbyStore(baseConfig);
+  const olderCreatedAt = new Date("2026-03-14T08:00:00.000Z");
+  const newerCreatedAt = new Date("2026-03-14T08:01:00.000Z");
+  const older = store.createRoom(
+    {
+      roomName: "较早房间",
+      hostPlayerName: "Host-A",
+      gameMode: "standard",
+      version: "1.2.3",
+      modVersion: "0.1.0",
+      maxPlayers: 4,
+      hostConnectionInfo: {
+        enetPort: 33771,
+      },
+    },
+    "203.0.113.10",
+    olderCreatedAt,
+  );
+  const newer = store.createRoom(
+    {
+      roomName: "较新房间",
+      hostPlayerName: "Host-B",
+      gameMode: "standard",
+      version: "1.2.3",
+      modVersion: "0.1.0",
+      maxPlayers: 4,
+      hostConnectionInfo: {
+        enetPort: 33772,
+      },
+    },
+    "203.0.113.11",
+    newerCreatedAt,
+  );
+
+  store.heartbeat(older.roomId, {
+    hostToken: older.hostToken,
+    currentPlayers: 1,
+    status: "open",
+  }, new Date("2026-03-14T08:10:00.000Z"));
+
+  const rooms = store.listRooms();
+  assert.deepEqual(rooms.map((room) => room.roomId), [newer.roomId, older.roomId]);
+});
+
 test("joinRoom returns direct candidates with public and lan addresses", () => {
   const store = new LobbyStore(baseConfig);
   const created = store.createRoom(
@@ -280,6 +325,47 @@ test("relaxed compatibility can skip game and mod version checks", () => {
   });
 
   assert.equal(joined.room.roomId, created.roomId);
+});
+
+test("joinRoom returns missing mod details when mod lists differ", () => {
+  const store = new LobbyStore(baseConfig);
+  const created = store.createRoom(
+    {
+      roomName: "模组差异房间",
+      hostPlayerName: "Host",
+      gameMode: "standard",
+      version: "1.2.3",
+      modVersion: "0.1.0",
+      modList: ["BaseMod", "SharedMod", "HostOnlyMod"],
+      maxPlayers: 4,
+      hostConnectionInfo: {
+        enetPort: 33771,
+      },
+    },
+    "203.0.113.10",
+  );
+
+  assert.throws(
+    () =>
+      store.joinRoom(created.roomId, {
+        playerName: "Guest",
+        version: "1.2.3",
+        modVersion: "0.1.0",
+        modList: ["BaseMod", "SharedMod", "LocalOnlyMod"],
+      }),
+    (error: unknown) =>
+      error instanceof LobbyStoreError &&
+      error.code === "mod_mismatch" &&
+      error.statusCode === 409 &&
+      typeof error.details === "object" &&
+      error.details !== null &&
+      JSON.stringify(error.details) === JSON.stringify({
+        roomModVersion: "0.1.0",
+        requestedModVersion: "0.1.0",
+        missingModsOnLocal: ["HostOnlyMod"],
+        missingModsOnHost: ["LocalOnlyMod"],
+      }),
+  );
 });
 
 test("relay-only strategy omits direct candidates", () => {

@@ -70,6 +70,7 @@ export interface RoomSummary {
 export interface Room extends RoomSummary {
   passwordHash?: string | undefined;
   hostConnectionInfo: HostConnectionInfo;
+  modList: string[];
 }
 
 export interface JoinTicket {
@@ -95,6 +96,7 @@ export interface CreateRoomInput {
   gameMode: string;
   version: string;
   modVersion: string;
+  modList?: string[] | undefined;
   maxPlayers: number;
   hostConnectionInfo: {
     enetPort: number;
@@ -112,6 +114,7 @@ export interface JoinRoomInput {
   password?: string | undefined;
   version: string;
   modVersion: string;
+  modList?: string[] | undefined;
   desiredSavePlayerNetId?: string | undefined;
 }
 
@@ -148,11 +151,19 @@ export interface JoinRoomResult {
   connectionPlan: ConnectionPlan;
 }
 
+export interface ModMismatchDetails {
+  roomModVersion: string;
+  requestedModVersion: string;
+  missingModsOnLocal?: string[] | undefined;
+  missingModsOnHost?: string[] | undefined;
+}
+
 export class LobbyStoreError extends Error {
   constructor(
     readonly statusCode: number,
     readonly code: string,
     message: string,
+    readonly details?: unknown,
   ) {
     super(message);
   }
@@ -177,7 +188,19 @@ export class LobbyStore {
   listRooms(now = new Date()): RoomSummary[] {
     return [...this.rooms.values()]
       .filter((room) => room.status !== "closed")
-      .sort((left, right) => right.lastHeartbeatAt.getTime() - left.lastHeartbeatAt.getTime())
+      .sort((left, right) => {
+        const statusDiff = getRoomStatusSortRank(left.status) - getRoomStatusSortRank(right.status);
+        if (statusDiff !== 0) {
+          return statusDiff;
+        }
+
+        const createdDiff = right.createdAt.getTime() - left.createdAt.getTime();
+        if (createdDiff !== 0) {
+          return createdDiff;
+        }
+
+        return left.roomName.localeCompare(right.roomName, "zh-Hans-CN");
+      })
       .map((room) => this.toRoomSummary(room));
   }
 
@@ -198,6 +221,7 @@ export class LobbyStore {
       maxPlayers: input.maxPlayers,
       version: input.version.trim(),
       modVersion: input.modVersion.trim(),
+      modList: normalizeModList(input.modList ?? []),
       relayState: "disabled",
       createdAt: now,
       lastHeartbeatAt: now,
@@ -234,6 +258,7 @@ export class LobbyStore {
     const hostSession = this.requireHostSession(roomId);
     const requestedVersion = input.version.trim();
     const requestedModVersion = input.modVersion.trim();
+    const requestedModList = normalizeModList(input.modList ?? []);
 
     if (room.status === "closed") {
       throw new LobbyStoreError(410, "room_closed", "该房间已经关闭。");
@@ -255,12 +280,11 @@ export class LobbyStore {
       );
     }
 
-    if (this.config.strictModVersionCheck && room.modVersion !== requestedModVersion) {
-      throw new LobbyStoreError(
-        409,
-        "mod_version_mismatch",
-        `MOD 版本不匹配。房间版本：${room.modVersion}；当前客户端版本：${requestedModVersion}。`,
-      );
+    if (this.config.strictModVersionCheck) {
+      const modMismatch = describeModMismatch(room, requestedModVersion, requestedModList);
+      if (modMismatch) {
+        throw new LobbyStoreError(409, modMismatch.code, modMismatch.message, modMismatch.details);
+      }
     }
 
     if (room.requiresPassword && !verifyPassword(input.password ?? "", room.passwordHash)) {
@@ -511,6 +535,60 @@ function buildConnectionPlan(room: Room, hostSession: HostSession, strategy: Con
   };
 }
 
+function describeModMismatch(
+  room: Room,
+  requestedModVersion: string,
+  requestedModList: string[],
+): { code: "mod_mismatch" | "mod_version_mismatch"; message: string; details: ModMismatchDetails } | null {
+  const details: ModMismatchDetails = {
+    roomModVersion: room.modVersion,
+    requestedModVersion,
+  };
+
+  if (room.modList.length > 0 && requestedModList.length > 0) {
+    const roomMods = new Set(room.modList);
+    const requestedMods = new Set(requestedModList);
+    const missingModsOnLocal = room.modList.filter((mod) => !requestedMods.has(mod));
+    const missingModsOnHost = requestedModList.filter((mod) => !roomMods.has(mod));
+    if (missingModsOnLocal.length > 0 || missingModsOnHost.length > 0) {
+      details.missingModsOnLocal = missingModsOnLocal;
+      details.missingModsOnHost = missingModsOnHost;
+      return {
+        code: "mod_mismatch",
+        message: buildModMismatchMessage(details),
+        details,
+      };
+    }
+  }
+
+  if (room.modVersion !== requestedModVersion) {
+    return {
+      code: "mod_version_mismatch",
+      message: `MOD 版本不匹配。房间版本：${room.modVersion}；当前客户端版本：${requestedModVersion}。`,
+      details,
+    };
+  }
+
+  return null;
+}
+
+function buildModMismatchMessage(details: ModMismatchDetails) {
+  const parts: string[] = ["MOD 不一致。"];
+  if (details.missingModsOnLocal && details.missingModsOnLocal.length > 0) {
+    parts.push(`你缺少：${details.missingModsOnLocal.join("、")}。`);
+  }
+
+  if (details.missingModsOnHost && details.missingModsOnHost.length > 0) {
+    parts.push(`房主缺少：${details.missingModsOnHost.join("、")}。`);
+  }
+
+  if (details.roomModVersion !== details.requestedModVersion) {
+    parts.push(`房间版本：${details.roomModVersion}；当前客户端版本：${details.requestedModVersion}。`);
+  }
+
+  return parts.join(" ");
+}
+
 function hashPassword(password: string) {
   const salt = randomBytes(16).toString("hex");
   const hash = scryptSync(password, salt, 64).toString("hex");
@@ -574,6 +652,13 @@ function normalizeAddressList(addresses: string[]) {
   return output;
 }
 
+function normalizeModList(mods: string[]) {
+  return mods
+    .map((value) => value.trim())
+    .filter((value, index, source) => value !== "" && source.indexOf(value) === index)
+    .sort((left, right) => left.localeCompare(right, "en"));
+}
+
 function normalizeSavedRunInput(savedRun: CreateRoomInput["savedRun"]): SavedRunInfo | undefined {
   if (!savedRun) {
     return undefined;
@@ -624,6 +709,19 @@ function normalizeNetId(value: string) {
   }
 
   return normalized;
+}
+
+function getRoomStatusSortRank(status: RoomStatus) {
+  switch (status) {
+    case "open":
+      return 0;
+    case "starting":
+      return 1;
+    case "full":
+      return 2;
+    default:
+      return 3;
+  }
 }
 
 function randomToken() {

@@ -8,7 +8,7 @@
 - 控制通道握手与广播
 - 向客户端返回 `ENet` 直连优先、失败时自动切 relay 的连接计划
 - 保存续局大厅房间的 `savedRun` 元数据与可接管角色槽位
-- 在 join 前置校验里区分 `version_mismatch`、`mod_version_mismatch`、`room_started`、`room_full`
+- 在 join 前置校验里区分 `version_mismatch`、`mod_version_mismatch`、`mod_mismatch`、`room_started`、`room_full`
 - 记录 `direct_timeout` / `relay_success` / `relay_failure` 等连接阶段日志
 
 它不负责：
@@ -98,6 +98,7 @@ npm start
 
 - `STRICT_GAME_VERSION_CHECK=false` 时，服务端不会因为游戏版本字符串不同而拒绝 join
 - `STRICT_MOD_VERSION_CHECK=false` 时，服务端不会因为 MOD 版本字符串不同而拒绝 join
+- 如果客户端和房主都上报了 `modList`，服务端会额外比较双方缺失项，并在 `mod_mismatch` 里返回 `missingModsOnLocal` / `missingModsOnHost`
 - `CONNECTION_STRATEGY` 可选 `direct-first`、`relay-first`、`relay-only`
 - 公开服建议保持严格校验；跨端测试服可以按需放宽并切到 `relay-only`
 
@@ -120,8 +121,9 @@ npm start
   - `savedRun.slots` 描述每个可接管角色槽位及其 `netId`
 - `POST /rooms/:id/join`
   - 支持可选的 `desiredSavePlayerNetId`
+  - 支持可选的 `modList`
   - 当续局房间存在多个空闲角色槽位时，客户端必须显式选择一个槽位再加入
-  - 失败时会明确返回 `version_mismatch`、`mod_version_mismatch`、`room_started`、`room_full` 等错误码
+  - 失败时会明确返回 `version_mismatch`、`mod_version_mismatch`、`mod_mismatch`、`room_started`、`room_full` 等错误码
 - `POST /rooms/:id/heartbeat`
   - 支持上报 `connectedPlayerNetIds`
   - 服务端会据此更新哪些续局角色槽位当前已被占用

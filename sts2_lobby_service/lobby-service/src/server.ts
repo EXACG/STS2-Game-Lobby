@@ -104,6 +104,7 @@ app.post("/rooms", (req, res, next) => {
       gameMode: requiredString(body?.gameMode, "gameMode"),
       version: requiredString(body?.version, "version"),
       modVersion: requiredString(body?.modVersion, "modVersion"),
+      modList: optionalStringArray(body?.modList),
       maxPlayers: positiveInt(body?.maxPlayers, "maxPlayers", 1, 8),
       hostConnectionInfo: {
         enetPort: positiveInt(body?.hostConnectionInfo?.enetPort, "hostConnectionInfo.enetPort", 1, 65535),
@@ -177,6 +178,7 @@ app.post("/rooms/:id/join", (req, res, next) => {
       password: optionalString(body?.password),
       version: requiredString(body?.version, "version"),
       modVersion: requiredString(body?.modVersion, "modVersion"),
+      modList: optionalStringArray(body?.modList),
       desiredSavePlayerNetId: optionalString(body?.desiredSavePlayerNetId),
     });
     const relayEndpoint = relayManager.getRoomEndpoint(req.params.id, resolveAdvertisedRelayHost(req));
@@ -255,6 +257,7 @@ app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
     res.status(error.statusCode).json({
       code: error.code,
       message: error.message,
+      details: error.details,
     });
     return;
   }
@@ -507,6 +510,14 @@ function optionalString(value: unknown) {
 
   const trimmed = value.trim();
   return trimmed === "" ? undefined : trimmed;
+}
+
+function optionalStringArray(value: unknown) {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+
+  return value.filter((entry): entry is string => typeof entry === "string").map((entry) => entry.trim());
 }
 
 function parseBooleanEnv(value: string | undefined, fallback: boolean) {
