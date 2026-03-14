@@ -9,6 +9,7 @@
   - 包含 macOS 双击入口 `install-sts2-lan-connect-macos.command`
   - 包含 Windows 双击入口 `install-sts2-lan-connect-windows.bat`
   - 包含默认大厅绑定 `lobby-defaults.json`
+  - 包含版本单一真源 `mod_manifest.json`
   - 包含大厅与续局联机使用说明
 - `sts2_lan_connect-release.zip`
   - 客户端压缩发布包
@@ -26,8 +27,15 @@
 - 多人续局存档会和大厅房间绑定，房主重新进入续局时自动重新发布
 - 房间显示真实游戏版本、真实 MOD 版本、`relay` 状态和是否已开局
 - 加入失败会细分为版本不一致、MOD 不一致、房间已开局、房间已满等原因
+- Windows / Steam 下多人续局的 `载入` / `放弃` 现在走兼容保护，不需要额外启动参数来规避 `.VAL.corrupt`
 - macOS 安装 / 卸载脚本会自动刷新 `SlayTheSpire2.app` 的签名，避免 bundle 被修改后无法启动
 - 当前公开发布包使用的大厅地址、兼容档位和连接策略，以 `sts2_lan_connect/lobby-defaults.json` 为准
+
+当前服务端特性：
+
+- `join` 前置校验会明确区分 `version_mismatch`、`mod_version_mismatch`、`room_started`、`room_full`
+- 通过 `STRICT_GAME_VERSION_CHECK`、`STRICT_MOD_VERSION_CHECK`、`CONNECTION_STRATEGY` 可以切换严格服或测试服策略
+- 服务端发布目录包含可直接部署的脚本、`.env.example` 和当前源码
 
 使用说明：
 

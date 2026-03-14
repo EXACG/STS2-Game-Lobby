@@ -9,7 +9,9 @@
 - 加入失败会细分为版本不一致、MOD 不一致、房间已开局、房间已满等原因
 - 多人续局存档会自动和大厅房间绑定，房主重新进入续局时会自动重新发布
 - 安装包内的默认大厅地址、兼容档位和连接策略以 `lobby-defaults.json` 为准
+- `mod_manifest.json` 是当前发布包内的 MOD 版本单一真源
 - 本地 `config.json` 现在写到用户数据目录，不再回写到游戏 app 包内
+- Windows / Steam 下不需要额外加 `--force-steam=off`；当前发布版会在多人续局 `载入` / `放弃` 时做内部兼容保护
 - 当前发布包固定包含 Windows 双击入口 `install-sts2-lan-connect-windows.bat`
 
 ## 安装前
@@ -97,3 +99,4 @@ powershell -ExecutionPolicy Bypass -File .\install-sts2-lan-connect-windows.ps1 
 - 大厅会显示真实版本号、`relay` 状态和右上角服务健康图标。
 - 默认连接策略以 `lobby-defaults.json` 为准，可能是 `direct-first`、`relay-first` 或 `relay-only`。
 - 如果大厅能正常刷新、但加入总是卡到超时，优先检查代理/TUN 是否接管了大厅服务器的 UDP 流量。
+- 如果你在 Windows / Steam 下从多人菜单继续载入旧多人续局，不需要额外启动参数；优先确认所有玩家都升级到当前发布包。

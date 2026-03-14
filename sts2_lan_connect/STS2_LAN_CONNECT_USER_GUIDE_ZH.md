@@ -62,6 +62,7 @@
 - 只有排障或切换环境时，才需要展开 `开发网络设置`
 - 如果安装包已经附带 `lobby-defaults.json`，默认大厅地址会自动生效，但不会默认明文展示在 UI 中
 - 当前安装包使用的大厅地址、兼容档位和连接策略都可以直接查看 `mods/sts2_lan_connect/lobby-defaults.json`
+- 当前发布包的 MOD 版本号以 `mods/sts2_lan_connect/mod_manifest.json` 为准
 
 ## 常见问题
 
@@ -83,6 +84,7 @@
 ### 提示 MOD 不一致
 
 - 所有联机玩家必须使用完全相同版本的 `STS2 LAN Connect`
+- 建议直接对照 `mods/sts2_lan_connect/mod_manifest.json` 中的版本号，而不是只看 DLL 文件时间
 
 ### 无法重新加入多人续局
 
@@ -93,7 +95,8 @@
 ### 房主保存并退出后，看不到多人续局存档
 
 - 旧版本客户端会在个别情况下把刚保存出的 `current_run_mp.save` 误判成坏档，并改名为 `.VAL.corrupt`
-- 当前发布版已经修复这个问题；如果你还遇到它，先确认所有玩家都已经更新到同一版最新发布包
+- 当前发布版已经修复这个问题；在 Windows / Steam 下也不需要额外添加 `--force-steam=off`
+- 如果你还遇到它，先确认所有玩家都已经更新到同一版最新发布包
 - 如果某次历史存档已经被改成 `.VAL.corrupt`，需要先恢复该文件后再继续排查
 
 ### 需要回退到手动 LAN/IP
