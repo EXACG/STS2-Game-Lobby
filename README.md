@@ -122,6 +122,7 @@ sudo ./scripts/install-lobby-service-linux.sh --install-dir /opt/sts2-lobby
 
 ## 版权与说明
 
+- 本仓库源码以 `GPL-3.0-only` 发布，详见 `LICENSE`
 - 本项目仅用于学习、研究和 MOD 开发测试
 - 《Slay the Spire 2》及相关版权归 Mega Crit 所有
 - 本项目与 Mega Crit 无官方关联

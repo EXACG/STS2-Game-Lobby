@@ -79,7 +79,7 @@ clean_release_noise() {
     -name '.DS_Store' \
     -o -name "$ASSEMBLY_NAME 2" \
     -o -name "$ASSEMBLY_NAME 3" \
-    -o -name '联机大厅mod*.zip' \
+    -o -name '联机大厅*.zip' \
     -o -name '游戏大厅mod*.zip' \
   \) -exec rm -rf {} +
 }
