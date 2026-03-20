@@ -45,7 +45,6 @@ internal sealed partial class LanConnectLobbyOverlay : Control
     private Button? _toggleSensitiveNetworkButton;
     private Button? _clearNetworkOverridesButton;
     private LineEdit? _serverBaseUrlInput;
-    private LineEdit? _serverWsUrlInput;
     private Label? _statusLabel;
     private Label? _healthIndicatorLabel;
     private Label? _roomListSummaryLabel;
@@ -309,17 +308,11 @@ internal sealed partial class LanConnectLobbyOverlay : Control
         networkHint.AddThemeColorOverride("font_color", TextMutedColor);
         _networkSettingsContainer.AddChild(networkHint);
 
-        _networkSettingsContainer.AddChild(BuildLabeledInputRow("HTTP 覆盖", LanConnectConfig.LobbyServerBaseUrlOverride, out _serverBaseUrlInput, "留空则继续使用内置大厅"));
-        _networkSettingsContainer.AddChild(BuildLabeledInputRow("WS 覆盖", LanConnectConfig.LobbyServerWsUrlOverride, out _serverWsUrlInput, "留空则按 HTTP 自动推导 /control"));
+        _networkSettingsContainer.AddChild(BuildLabeledInputRow("HTTP 覆盖", LanConnectConfig.LobbyServerBaseUrlOverride, out _serverBaseUrlInput, "留空则继续使用内置大厅；WS 会自动从 HTTP 地址推导"));
 
         if (_serverBaseUrlInput != null)
         {
             _serverBaseUrlInput.Secret = true;
-        }
-
-        if (_serverWsUrlInput != null)
-        {
-            _serverWsUrlInput.Secret = true;
         }
 
         HBoxContainer networkActions = new();
@@ -914,7 +907,7 @@ internal sealed partial class LanConnectLobbyOverlay : Control
                     _roomHintLabel,
                     HasAvailableLobbyEndpoint()
                         ? "你可以先刷新大厅，或者直接在右侧创建一个新的房间。"
-                        : "当前客户端未绑定内置大厅服务。请在设置里填写 HTTP/WS 覆盖地址。");
+                        : "当前客户端未绑定内置大厅服务。请在设置里填写 HTTP 覆盖地址。");
                 _roomHintLabel.AddThemeColorOverride("font_color", HasAvailableLobbyEndpoint() ? AccentColor : DangerColor);
             }
             else
@@ -1720,11 +1713,6 @@ internal sealed partial class LanConnectLobbyOverlay : Control
             LanConnectConfig.LobbyServerBaseUrl = _serverBaseUrlInput.Text.Trim();
         }
 
-        if (_serverWsUrlInput != null)
-        {
-            LanConnectConfig.LobbyServerWsUrl = _serverWsUrlInput.Text.Trim();
-        }
-
         UpdateNetworkSummary();
     }
 
@@ -1738,11 +1726,6 @@ internal sealed partial class LanConnectLobbyOverlay : Control
         if (_serverBaseUrlInput != null)
         {
             _serverBaseUrlInput.Text = LanConnectConfig.LobbyServerBaseUrlOverride;
-        }
-
-        if (_serverWsUrlInput != null)
-        {
-            _serverWsUrlInput.Text = LanConnectConfig.LobbyServerWsUrlOverride;
         }
 
         UpdateNetworkSummary();
@@ -1762,11 +1745,6 @@ internal sealed partial class LanConnectLobbyOverlay : Control
             _serverBaseUrlInput.Secret = !_networkFieldsRevealed;
         }
 
-        if (_serverWsUrlInput != null)
-        {
-            _serverWsUrlInput.Secret = !_networkFieldsRevealed;
-        }
-
         if (_toggleSensitiveNetworkButton != null)
         {
             SetButtonText(_toggleSensitiveNetworkButton, _networkFieldsRevealed ? "隐藏覆盖地址" : "显示覆盖地址");
@@ -1778,11 +1756,6 @@ internal sealed partial class LanConnectLobbyOverlay : Control
         if (_serverBaseUrlInput != null)
         {
             _serverBaseUrlInput.Text = string.Empty;
-        }
-
-        if (_serverWsUrlInput != null)
-        {
-            _serverWsUrlInput.Text = string.Empty;
         }
 
         PersistSettings();
@@ -1801,7 +1774,7 @@ internal sealed partial class LanConnectLobbyOverlay : Control
             _networkSettingsContainer.Visible
                 ? "收起开发网络设置"
                 : "展开开发网络设置");
-        _clearNetworkOverridesButton.Disabled = !LanConnectConfig.HasLobbyServerOverrides && string.IsNullOrWhiteSpace(_serverBaseUrlInput?.Text) && string.IsNullOrWhiteSpace(_serverWsUrlInput?.Text);
+        _clearNetworkOverridesButton.Disabled = !LanConnectConfig.HasLobbyServerOverrides && string.IsNullOrWhiteSpace(_serverBaseUrlInput?.Text);
     }
 
     private void ToggleSettingsVisibility()
@@ -1903,7 +1876,7 @@ internal sealed partial class LanConnectLobbyOverlay : Control
 
         if (_clearNetworkOverridesButton != null)
         {
-            bool hasOverrideText = !string.IsNullOrWhiteSpace(_serverBaseUrlInput?.Text) || !string.IsNullOrWhiteSpace(_serverWsUrlInput?.Text);
+            bool hasOverrideText = !string.IsNullOrWhiteSpace(_serverBaseUrlInput?.Text);
             _clearNetworkOverridesButton.Disabled = !(LanConnectConfig.HasLobbyServerOverrides || hasOverrideText);
         }
 

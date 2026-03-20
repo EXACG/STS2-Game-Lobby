@@ -13,8 +13,6 @@ internal sealed class LanConnectConfigData
 
     public string LobbyServerBaseUrl { get; set; } = string.Empty;
 
-    public string LobbyServerWsUrl { get; set; } = string.Empty;
-
     public string LastRoomName { get; set; } = string.Empty;
 
     public string PlayerDisplayName { get; set; } = string.Empty;
@@ -74,26 +72,6 @@ internal static class LanConnectConfig
         }
     }
 
-    public static string LobbyServerWsUrl
-    {
-        get
-        {
-            lock (Sync)
-            {
-                return string.IsNullOrWhiteSpace(_data.LobbyServerWsUrl)
-                    ? LanConnectLobbyEndpointDefaults.GetDefaultWsUrl()
-                    : _data.LobbyServerWsUrl;
-            }
-        }
-        set
-        {
-            SetString(
-                static (data, next) => data.LobbyServerWsUrl = next,
-                static data => data.LobbyServerWsUrl,
-                NormalizeLobbyEndpointOverride(value));
-        }
-    }
-
     public static string LobbyServerBaseUrlOverride
     {
         get
@@ -105,25 +83,13 @@ internal static class LanConnectConfig
         }
     }
 
-    public static string LobbyServerWsUrlOverride
-    {
-        get
-        {
-            lock (Sync)
-            {
-                return _data.LobbyServerWsUrl;
-            }
-        }
-    }
-
     public static bool HasLobbyServerOverrides
     {
         get
         {
             lock (Sync)
             {
-                return !string.IsNullOrWhiteSpace(_data.LobbyServerBaseUrl)
-                    || !string.IsNullOrWhiteSpace(_data.LobbyServerWsUrl);
+                return !string.IsNullOrWhiteSpace(_data.LobbyServerBaseUrl);
             }
         }
     }
@@ -287,15 +253,6 @@ internal static class LanConnectConfig
         else if (LanConnectLobbyEndpointDefaults.MatchesBundledDefaultBaseUrl(_data.LobbyServerBaseUrl))
         {
             _data.LobbyServerBaseUrl = string.Empty;
-        }
-
-        if (LanConnectLobbyEndpointDefaults.IsLegacyLocalhostWsUrl(_data.LobbyServerWsUrl))
-        {
-            _data.LobbyServerWsUrl = string.Empty;
-        }
-        else if (LanConnectLobbyEndpointDefaults.MatchesBundledDefaultWsUrl(_data.LobbyServerWsUrl))
-        {
-            _data.LobbyServerWsUrl = string.Empty;
         }
 
         _data.SaveRoomBindings = _data.SaveRoomBindings

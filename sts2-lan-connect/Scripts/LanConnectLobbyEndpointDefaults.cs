@@ -11,9 +11,6 @@ internal sealed class LanConnectBundledLobbyDefaults
     [JsonPropertyName("baseUrl")]
     public string BaseUrl { get; set; } = string.Empty;
 
-    [JsonPropertyName("wsUrl")]
-    public string WsUrl { get; set; } = string.Empty;
-
     [JsonPropertyName("compatibilityProfile")]
     public string CompatibilityProfile { get; set; } = string.Empty;
 
@@ -29,7 +26,6 @@ internal static class LanConnectLobbyEndpointDefaults
 
     private static bool _loaded;
     private static string _defaultBaseUrl = string.Empty;
-    private static string _defaultWsUrl = string.Empty;
     private static string _compatibilityProfile = LanConnectConstants.DefaultCompatibilityProfile;
     private static string _connectionStrategy = LanConnectConstants.DefaultConnectionStrategy;
 
@@ -37,12 +33,6 @@ internal static class LanConnectLobbyEndpointDefaults
     {
         EnsureLoaded();
         return _defaultBaseUrl;
-    }
-
-    public static string GetDefaultWsUrl()
-    {
-        EnsureLoaded();
-        return _defaultWsUrl;
     }
 
     public static bool HasBundledDefaults()
@@ -74,17 +64,6 @@ internal static class LanConnectLobbyEndpointDefaults
         return string.Equals(NormalizeBaseUrl(value), bundled, StringComparison.OrdinalIgnoreCase);
     }
 
-    public static bool MatchesBundledDefaultWsUrl(string? value)
-    {
-        string bundled = GetDefaultWsUrl();
-        if (string.IsNullOrWhiteSpace(bundled))
-        {
-            return false;
-        }
-
-        return string.Equals(NormalizeWsUrl(value), bundled, StringComparison.OrdinalIgnoreCase);
-    }
-
     public static bool IsLegacyLocalhostBaseUrl(string? value)
     {
         if (string.IsNullOrWhiteSpace(value))
@@ -95,18 +74,6 @@ internal static class LanConnectLobbyEndpointDefaults
         string normalized = NormalizeBaseUrl(value);
         return string.Equals(normalized, "http://127.0.0.1:8787", StringComparison.OrdinalIgnoreCase)
             || string.Equals(normalized, "http://localhost:8787", StringComparison.OrdinalIgnoreCase);
-    }
-
-    public static bool IsLegacyLocalhostWsUrl(string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return true;
-        }
-
-        string normalized = NormalizeWsUrl(value);
-        return string.Equals(normalized, "ws://127.0.0.1:8787/control", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(normalized, "ws://localhost:8787/control", StringComparison.OrdinalIgnoreCase);
     }
 
     private static void EnsureLoaded()
@@ -142,7 +109,6 @@ internal static class LanConnectLobbyEndpointDefaults
             }
 
             _defaultBaseUrl = baseUrl;
-            _defaultWsUrl = NormalizeWsUrl(defaults?.WsUrl, baseUrl);
             _compatibilityProfile = NormalizeCompatibilityProfile(defaults?.CompatibilityProfile);
             _connectionStrategy = NormalizeConnectionStrategy(defaults?.ConnectionStrategy);
         }
@@ -150,7 +116,6 @@ internal static class LanConnectLobbyEndpointDefaults
         {
             Log.Warn($"sts2_lan_connect failed to read bundled lobby defaults: {ex.Message}");
             _defaultBaseUrl = string.Empty;
-            _defaultWsUrl = string.Empty;
             _compatibilityProfile = LanConnectConstants.DefaultCompatibilityProfile;
             _connectionStrategy = LanConnectConstants.DefaultConnectionStrategy;
         }
@@ -163,21 +128,8 @@ internal static class LanConnectLobbyEndpointDefaults
             : value.Trim().TrimEnd('/');
     }
 
-    private static string NormalizeWsUrl(string? value)
+    public static string DeriveWsUrl(string baseUrl)
     {
-        return string.IsNullOrWhiteSpace(value)
-            ? string.Empty
-            : value.Trim().TrimEnd('/');
-    }
-
-    private static string NormalizeWsUrl(string? value, string baseUrl)
-    {
-        string normalized = NormalizeWsUrl(value);
-        if (!string.IsNullOrWhiteSpace(normalized))
-        {
-            return normalized;
-        }
-
         if (string.IsNullOrWhiteSpace(baseUrl))
         {
             return string.Empty;
