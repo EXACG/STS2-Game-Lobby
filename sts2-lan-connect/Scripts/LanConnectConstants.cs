@@ -10,8 +10,6 @@ internal static class LanConnectConstants
 
     public static readonly string DefaultLobbyServerBaseUrl = LanConnectLobbyEndpointDefaults.GetDefaultBaseUrl();
 
-    public static readonly string DefaultLobbyServerWsUrl = LanConnectLobbyEndpointDefaults.GetDefaultWsUrl();
-
     public const string DefaultCompatibilityProfile = "test_relaxed";
 
     public const string DefaultConnectionStrategy = "relay-first";

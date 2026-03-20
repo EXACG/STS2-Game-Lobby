@@ -16,10 +16,10 @@ internal sealed class LobbyApiClient : IDisposable
     private readonly Uri _baseUri;
     private readonly Uri _controlUri;
 
-    public LobbyApiClient(string baseUrl, string wsUrl)
+    public LobbyApiClient(string baseUrl)
     {
         string normalizedBaseUrl = NormalizeBaseUrl(baseUrl);
-        string normalizedWsUrl = NormalizeWsUrl(wsUrl, normalizedBaseUrl);
+        string normalizedWsUrl = NormalizeWsUrl(normalizedBaseUrl);
         _baseUri = new Uri(normalizedBaseUrl, UriKind.Absolute);
         _controlUri = new Uri(normalizedWsUrl, UriKind.Absolute);
         _httpClient = new HttpClient
@@ -31,7 +31,7 @@ internal sealed class LobbyApiClient : IDisposable
 
     public static LobbyApiClient CreateConfigured()
     {
-        return new LobbyApiClient(LanConnectConfig.LobbyServerBaseUrl, LanConnectConfig.LobbyServerWsUrl);
+        return new LobbyApiClient(LanConnectConfig.LobbyServerBaseUrl);
     }
 
     public Uri BuildHostControlUri(string controlChannelId, string roomId, string hostToken)
@@ -168,16 +168,9 @@ internal sealed class LobbyApiClient : IDisposable
         return normalized.TrimEnd('/') + "/";
     }
 
-    private static string NormalizeWsUrl(string value, string baseUrl)
+    private static string NormalizeWsUrl(string baseUrl)
     {
-        if (!string.IsNullOrWhiteSpace(value))
-        {
-            return value.Trim();
-        }
-
-        Uri httpUri = new(baseUrl, UriKind.Absolute);
-        string scheme = httpUri.Scheme.Equals("https", StringComparison.OrdinalIgnoreCase) ? "wss" : "ws";
-        return $"{scheme}://{httpUri.Authority}/control";
+        return LanConnectLobbyEndpointDefaults.DeriveWsUrl(baseUrl);
     }
 
     private static string GetEndpointSource()

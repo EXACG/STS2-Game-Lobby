@@ -31,7 +31,7 @@ internal static class LanConnectDebugReport
         string configPath = Path.Combine(writableDataDirectory, "config.json");
         string? logPath = ResolveClientLogPath();
         string effectiveBaseUrl = LanConnectConfig.LobbyServerBaseUrl;
-        string effectiveWsUrl = LanConnectConfig.LobbyServerWsUrl;
+        string effectiveWsUrl = LanConnectLobbyEndpointDefaults.DeriveWsUrl(effectiveBaseUrl);
         IReadOnlyList<string> logLines = ReadRelevantLogLines(logPath);
         Dictionary<string, List<string>> identifiers = ExtractIdentifiers(logLines);
 
