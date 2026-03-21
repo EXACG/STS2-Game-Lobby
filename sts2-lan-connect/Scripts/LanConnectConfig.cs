@@ -23,6 +23,9 @@ internal sealed class LanConnectConfigData
 internal static class LanConnectConfig
 {
     private const string ConfigFileName = "config.json";
+    public const int MaxRoomNameLength = 32;
+    public const int MaxPlayerDisplayNameLength = 10;
+    public const int MaxRoomPasswordLength = 10;
 
     private static readonly object Sync = new();
 
@@ -108,7 +111,7 @@ internal static class LanConnectConfig
             SetString(
                 static (data, next) => data.LastRoomName = next,
                 static data => data.LastRoomName,
-                value.Trim());
+                SanitizeRoomName(value));
         }
     }
 
@@ -126,7 +129,7 @@ internal static class LanConnectConfig
             SetString(
                 static (data, next) => data.PlayerDisplayName = next,
                 static data => data.PlayerDisplayName,
-                value.Trim());
+                SanitizePlayerDisplayName(value));
         }
     }
 
@@ -182,7 +185,7 @@ internal static class LanConnectConfig
             return configured;
         }
 
-        return Environment.UserName;
+        return SanitizePlayerDisplayName(Environment.UserName);
     }
 
     public static void Load()
@@ -255,6 +258,9 @@ internal static class LanConnectConfig
             _data.LobbyServerBaseUrl = string.Empty;
         }
 
+        _data.LastRoomName = SanitizeRoomName(_data.LastRoomName);
+        _data.PlayerDisplayName = SanitizePlayerDisplayName(_data.PlayerDisplayName);
+
         _data.SaveRoomBindings = _data.SaveRoomBindings
             .Where(binding => !string.IsNullOrWhiteSpace(binding.SaveKey) && !string.IsNullOrWhiteSpace(binding.RoomName))
             .Select(CloneBinding)
@@ -274,7 +280,7 @@ internal static class LanConnectConfig
         return new LanConnectSavedRoomBinding
         {
             SaveKey = binding.SaveKey,
-            RoomName = binding.RoomName,
+            RoomName = SanitizeRoomName(binding.RoomName),
             Password = binding.Password,
             GameMode = binding.GameMode,
             RunStartTime = binding.RunStartTime,
@@ -282,5 +288,28 @@ internal static class LanConnectConfig
             PlayerSignature = binding.PlayerSignature,
             UpdatedAtUnixSeconds = binding.UpdatedAtUnixSeconds
         };
+    }
+
+    public static string SanitizeRoomName(string? value)
+    {
+        return SanitizeText(value, MaxRoomNameLength);
+    }
+
+    public static string SanitizePlayerDisplayName(string? value)
+    {
+        return SanitizeText(value, MaxPlayerDisplayNameLength);
+    }
+
+    public static string SanitizeRoomPassword(string? value)
+    {
+        return SanitizeText(value, MaxRoomPasswordLength);
+    }
+
+    private static string SanitizeText(string? value, int maxLength)
+    {
+        string trimmed = string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();
+        return trimmed.Length <= maxLength
+            ? trimmed
+            : trimmed[..maxLength];
     }
 }

@@ -58,7 +58,7 @@ internal static class LanConnectLobbyPlayerNameDirectory
                 ActiveRoomNames.Clear();
             }
 
-            ActiveRoomNames[netId] = playerName.Trim();
+            ActiveRoomNames[netId] = LanConnectConfig.SanitizePlayerDisplayName(playerName);
             ApplyUnsafe();
         }
     }
@@ -85,7 +85,7 @@ internal static class LanConnectLobbyPlayerNameDirectory
                     continue;
                 }
 
-                ActiveRoomNames[netId] = entry.PlayerName.Trim();
+                ActiveRoomNames[netId] = LanConnectConfig.SanitizePlayerDisplayName(entry.PlayerName);
             }
 
             ApplyUnsafe();
