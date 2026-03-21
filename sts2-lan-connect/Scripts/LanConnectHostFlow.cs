@@ -76,13 +76,15 @@ internal static class LanConnectHostFlow
         }
     }
 
-    public static async Task<bool> StartLobbyHostAsync(string roomName, string? password, Control loadingOverlay, NSubmenuStack stack)
+    public static async Task<bool> StartLobbyHostAsync(string roomName, string? password, GameMode gameMode, Control loadingOverlay, NSubmenuStack stack)
     {
         loadingOverlay.Visible = true;
         NetHostGameService netService = new();
+        string lobbyGameMode = LanConnectMultiplayerSaveRoomBinding.GetLobbyGameMode(gameMode);
+        string gameModeLabel = LanConnectMultiplayerSaveRoomBinding.GetLobbyGameModeLabel(gameMode);
 
         GD.Print(
-            $"sts2_lan_connect host_flow: start lobby host roomName='{roomName}', passwordSet={!string.IsNullOrWhiteSpace(password)}, player='{LanConnectConfig.GetEffectivePlayerDisplayName()}', localAddressCount={LanConnectNetUtil.GetLanAddressStrings().Count}");
+            $"sts2_lan_connect host_flow: start lobby host roomName='{roomName}', passwordSet={!string.IsNullOrWhiteSpace(password)}, gameMode={lobbyGameMode}, player='{LanConnectConfig.GetEffectivePlayerDisplayName()}', localAddressCount={LanConnectNetUtil.GetLanAddressStrings().Count}");
 
         try
         {
@@ -104,7 +106,7 @@ internal static class LanConnectHostFlow
                 netService,
                 roomName,
                 password,
-                GameMode.Standard,
+                gameMode,
                 publishSource: "overlay_create",
                 boundSaveKey: null,
                 savedRunInfo: null,
@@ -115,13 +117,13 @@ internal static class LanConnectHostFlow
                 return false;
             }
 
-            PushHostScreen(GameMode.Standard, stack, netService);
+            PushHostScreen(gameMode, stack, netService);
             await Task.Yield();
 
             string primaryAddress = LanConnectNetUtil.GetPrimaryLanAddress();
             string lockStatus = string.IsNullOrWhiteSpace(password) ? "无密码" : "已加锁";
             LanConnectPopupUtil.ShowInfo(
-                $"大厅房间已发布。\n房间名：{roomName}\n状态：{lockStatus}\n本地 ENet：{primaryAddress}:{LanConnectConstants.DefaultPort}\n好友现在可以从“游戏大厅”直接加入。");
+                $"大厅房间已发布。\n房间名：{roomName}\n模式：{gameModeLabel}\n状态：{lockStatus}\n本地 ENet：{primaryAddress}:{LanConnectConstants.DefaultPort}\n好友现在可以从“游戏大厅”直接加入。");
             return true;
         }
         catch (LobbyServiceException ex)
@@ -160,8 +162,8 @@ internal static class LanConnectHostFlow
         LobbySavedRunInfo? savedRunInfo,
         bool notifyOnFailure)
     {
-        string trimmedRoomName = roomName.Trim();
-        string? trimmedPassword = string.IsNullOrWhiteSpace(password) ? null : password.Trim();
+        string trimmedRoomName = LanConnectConfig.SanitizeRoomName(roomName);
+        string? trimmedPassword = string.IsNullOrWhiteSpace(password) ? null : LanConnectConfig.SanitizeRoomPassword(password);
         LobbyApiClient? apiClient = null;
         string playerName = LanConnectConfig.GetEffectivePlayerDisplayName();
         string lobbyGameMode = LanConnectMultiplayerSaveRoomBinding.GetLobbyGameMode(gameMode);

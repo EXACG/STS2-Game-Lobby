@@ -111,7 +111,7 @@ internal static class LanConnectMultiplayerSaveRoomBinding
 
     public static void PersistBinding(SerializableRun run, string roomName, string? password, string gameMode, string source)
     {
-        string trimmedRoomName = roomName.Trim();
+        string trimmedRoomName = LanConnectConfig.SanitizeRoomName(roomName);
         if (string.IsNullOrWhiteSpace(trimmedRoomName))
         {
             GD.Print($"sts2_lan_connect save_binding: skip persist because room name is empty. source={source}");
@@ -122,7 +122,7 @@ internal static class LanConnectMultiplayerSaveRoomBinding
         {
             SaveKey = BuildSaveKey(run),
             RoomName = trimmedRoomName,
-            Password = string.IsNullOrWhiteSpace(password) ? string.Empty : password.Trim(),
+            Password = string.IsNullOrWhiteSpace(password) ? string.Empty : LanConnectConfig.SanitizeRoomPassword(password),
             GameMode = string.IsNullOrWhiteSpace(gameMode) ? GetLobbyGameMode(run) : gameMode.Trim(),
             RunStartTime = run.StartTime,
             PlayerCount = run.Players.Count,
@@ -143,6 +143,22 @@ internal static class LanConnectMultiplayerSaveRoomBinding
             GameMode.Custom => "custom",
             GameMode.Daily => "daily",
             _ => LanConnectConstants.DefaultGameMode
+        };
+    }
+
+    public static string GetLobbyGameModeLabel(GameMode gameMode)
+    {
+        return GetLobbyGameModeLabel(GetLobbyGameMode(gameMode));
+    }
+
+    public static string GetLobbyGameModeLabel(string? gameMode)
+    {
+        return gameMode?.Trim().ToLowerInvariant() switch
+        {
+            "daily" => "多人每日挑战",
+            "custom" => "自定义模式",
+            "standard" or "" or null => "标准模式",
+            _ => gameMode.Trim()
         };
     }
 

@@ -34,6 +34,28 @@ internal sealed class LobbyRoomSummary
     public LobbySavedRunInfo? SavedRun { get; set; }
 }
 
+internal sealed class LobbyDirectoryServerListResponse
+{
+    public bool Ok { get; set; }
+
+    public DateTimeOffset GeneratedAt { get; set; }
+
+    public List<LobbyDirectoryServerEntry> Servers { get; set; } = new();
+}
+
+internal sealed class LobbyDirectoryServerEntry
+{
+    public string ServerId { get; set; } = string.Empty;
+
+    public string ServerName { get; set; } = string.Empty;
+
+    public string BaseUrl { get; set; } = string.Empty;
+
+    public int Rooms { get; set; }
+
+    public DateTimeOffset LastVerifiedAt { get; set; }
+}
+
 internal sealed class LobbySavedRunInfo
 {
     public string SaveKey { get; set; } = string.Empty;
