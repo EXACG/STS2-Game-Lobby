@@ -18,9 +18,9 @@ internal sealed class LanConnectConfigData
 
     public string PlayerDisplayName { get; set; } = string.Empty;
 
-    public float RoomChatOffsetX { get; set; } = float.NaN;
+    public float? RoomChatOffsetX { get; set; }
 
-    public float RoomChatOffsetY { get; set; } = float.NaN;
+    public float? RoomChatOffsetY { get; set; }
 
     public List<LanConnectSavedRoomBinding> SaveRoomBindings { get; set; } = new();
 }
@@ -144,20 +144,20 @@ internal static class LanConnectConfig
         {
             lock (Sync)
             {
-                if (float.IsNaN(_data.RoomChatOffsetX) || float.IsNaN(_data.RoomChatOffsetY))
+                if (!_data.RoomChatOffsetX.HasValue || !_data.RoomChatOffsetY.HasValue)
                 {
                     return null;
                 }
 
-                return new Vector2(_data.RoomChatOffsetX, _data.RoomChatOffsetY);
+                return new Vector2(_data.RoomChatOffsetX.Value, _data.RoomChatOffsetY.Value);
             }
         }
         set
         {
             lock (Sync)
             {
-                float nextX = value?.X ?? float.NaN;
-                float nextY = value?.Y ?? float.NaN;
+                float? nextX = value?.X;
+                float? nextY = value?.Y;
                 if (_data.RoomChatOffsetX == nextX && _data.RoomChatOffsetY == nextY)
                 {
                     return;
@@ -297,13 +297,13 @@ internal static class LanConnectConfig
 
         _data.LastRoomName = SanitizeRoomName(_data.LastRoomName);
         _data.PlayerDisplayName = SanitizePlayerDisplayName(_data.PlayerDisplayName);
-        if (float.IsInfinity(_data.RoomChatOffsetX))
+        if (_data.RoomChatOffsetX.HasValue && !float.IsFinite(_data.RoomChatOffsetX.Value))
         {
-            _data.RoomChatOffsetX = float.NaN;
+            _data.RoomChatOffsetX = null;
         }
-        if (float.IsInfinity(_data.RoomChatOffsetY))
+        if (_data.RoomChatOffsetY.HasValue && !float.IsFinite(_data.RoomChatOffsetY.Value))
         {
-            _data.RoomChatOffsetY = float.NaN;
+            _data.RoomChatOffsetY = null;
         }
 
         _data.SaveRoomBindings = _data.SaveRoomBindings
