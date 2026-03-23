@@ -12,7 +12,7 @@
 - 记录 `direct_timeout` / `relay_success` / `relay_failure` 等连接阶段日志
 - 内置子服务器控制面板 `/server-admin`
 - 子服务器控制面板可维护大厅公告，并通过 `GET /announcements` 下发给客户端
-- 向独立母面板上报公开申请、claim 令牌和 3 分钟心跳
+- 向官方母面板自动上报公开申请、claim 令牌和 3 分钟心跳
 
 它不负责：
 
@@ -22,13 +22,13 @@
 
 当前 relay 的定位是“直连失败时的房间级兜底路径”，不是完整的独立联机协议。
 
+说明：
+
+- 官方公共服务器母面板不再随公开仓库一起发布
+- 当前公开仓库只保留 `lobby-service` 本体
+- 如果你要进入官方公开列表，只需要把 `SERVER_REGISTRY_BASE_URL` 指向官方母面板，并在 `/server-admin` 中打开“公开列表申请”
+
 ## Docker 部署
-
-如果这台机器已经同时承担母面板和大厅服务，当前更推荐直接使用仓库根目录的双服务 Docker 栈：
-
-```bash
-sudo ./scripts/install-server-stack-docker-linux.sh --install-dir /opt/sts2-server-stack-docker
-```
 
 如果只想单独容器化当前 `lobby-service`，也可以直接在本目录下使用：
 
@@ -156,8 +156,8 @@ npm start
 - 当前公开服部署默认使用 `relay-only`；如果要回到其他策略，请显式覆盖 `CONNECTION_STRATEGY`
 - `SERVER_ADMIN_*` 控制子面板登录，不配置密码哈希和会话密钥时，`/server-admin` 页面仍可打开，但无法登录修改设置
 - `SERVER_ADMIN_STATE_FILE` 默认保存这台子服的显示名称、公开设置、公告配置和同步状态
-- `SERVER_REGISTRY_BASE_URL` 指向母面板地址；配置后子服务会按 3 分钟周期自动同步公开申请 / claim / 心跳
-- 如果这个服务在公共 Docker 栈里以宿主机网络运行，`SERVER_REGISTRY_BASE_URL` 应改成 `http://127.0.0.1:18787`
+- `SERVER_REGISTRY_BASE_URL` 指向母面板地址；当前公开配置默认写成官方母面板 `http://47.111.146.69:18787`
+- 只要 `/server-admin` 里打开了“公开列表申请”，子服务就会自动创建申请、自动 claim 审核结果，并持续同步心跳
 - `SERVER_REGISTRY_PUBLIC_*` 用于告诉母面板“这台子服务器对外的 HTTP / WS / 带宽探针地址”
 
 ## API

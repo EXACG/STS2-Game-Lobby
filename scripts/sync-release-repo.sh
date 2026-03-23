@@ -8,8 +8,6 @@ CLIENT_DIR="$ROOT_DIR/sts2-lan-connect/release/sts2_lan_connect"
 CLIENT_ZIP="$ROOT_DIR/sts2-lan-connect/release/sts2_lan_connect-release.zip"
 SERVICE_DIR="$ROOT_DIR/lobby-service/release/sts2_lobby_service"
 SERVICE_ZIP="$ROOT_DIR/lobby-service/release/sts2_lobby_service.zip"
-REGISTRY_DIR="$ROOT_DIR/server-registry/release/sts2_server_registry"
-REGISTRY_ZIP="$ROOT_DIR/server-registry/release/sts2_server_registry.zip"
 PUBLIC_RELEASES_DIR="$REPO_DIR/releases"
 
 usage() {
@@ -63,13 +61,10 @@ trim_synced_source_noise() {
     "$REPO_DIR/lobby-service/node_modules" \
     "$REPO_DIR/lobby-service/dist" \
     "$REPO_DIR/lobby-service/release" \
-    "$REPO_DIR/server-registry/node_modules" \
-    "$REPO_DIR/server-registry/dist" \
-    "$REPO_DIR/server-registry/release" \
     "$REPO_DIR/sts2-lan-connect/.godot" \
     "$REPO_DIR/sts2-lan-connect/build" \
     "$REPO_DIR/sts2-lan-connect/release"
-  find "$REPO_DIR/lobby-service" "$REPO_DIR/server-registry" "$REPO_DIR/sts2-lan-connect" "$REPO_DIR/docs" "$REPO_DIR/scripts" "$REPO_DIR/research" -name '.DS_Store' -delete 2>/dev/null || true
+  find "$REPO_DIR/lobby-service" "$REPO_DIR/sts2-lan-connect" "$REPO_DIR/docs" "$REPO_DIR/scripts" "$REPO_DIR/research" -name '.DS_Store' -delete 2>/dev/null || true
 }
 
 require_file() {
@@ -99,13 +94,10 @@ done
 [[ -f "$CLIENT_ZIP" ]] || die "Client release zip not found: $CLIENT_ZIP"
 [[ -d "$SERVICE_DIR" ]] || die "Service release directory not found: $SERVICE_DIR"
 [[ -f "$SERVICE_ZIP" ]] || die "Service release zip not found: $SERVICE_ZIP"
-[[ -d "$REGISTRY_DIR" ]] || die "Registry release directory not found: $REGISTRY_DIR"
-[[ -f "$REGISTRY_ZIP" ]] || die "Registry release zip not found: $REGISTRY_ZIP"
 require_file "$CLIENT_DIR/install-sts2-lan-connect-windows.bat"
 require_file "$CLIENT_DIR/install-sts2-lan-connect-windows.ps1"
 require_file "$CLIENT_DIR/install-sts2-lan-connect-macos.sh"
 require_file "$CLIENT_DIR/install-sts2-lan-connect-macos.command"
-require_file "$REGISTRY_DIR/install-server-registry-linux.sh"
 
 log "Syncing source tree..."
 sync_root_file "$ROOT_DIR/README.md" "$REPO_DIR/README.md"
@@ -117,8 +109,22 @@ sync_tree "$ROOT_DIR/research" "$REPO_DIR/research"
 sync_tree "$ROOT_DIR/scripts" "$REPO_DIR/scripts"
 sync_tree "$ROOT_DIR/sts2-lan-connect" "$REPO_DIR/sts2-lan-connect"
 sync_tree "$ROOT_DIR/lobby-service" "$REPO_DIR/lobby-service"
-sync_tree "$ROOT_DIR/server-registry" "$REPO_DIR/server-registry"
 trim_synced_source_noise
+# Keep the public repo free of the private registry/admin service and its derived artifacts.
+rm -rf \
+  "$REPO_DIR/server-registry" \
+  "$REPO_DIR/deploy" \
+  "$REPO_DIR/releases/sts2_server_registry" \
+  "$REPO_DIR/releases/sts2_server_stack_docker"
+rm -f \
+  "$REPO_DIR/docs/STS2_SERVER_DOCKER_OPERATION_GUIDE_ZH.md" \
+  "$REPO_DIR/scripts/install-server-registry-linux.sh" \
+  "$REPO_DIR/scripts/install-server-stack-docker-linux.sh" \
+  "$REPO_DIR/scripts/maintain-server-stack-docker.sh" \
+  "$REPO_DIR/scripts/package-server-registry.sh" \
+  "$REPO_DIR/scripts/package-server-stack-docker.sh" \
+  "$REPO_DIR/releases/sts2_server_registry.zip" \
+  "$REPO_DIR/releases/sts2_server_stack_docker.zip"
 
 log "Syncing release artifacts..."
 rm -rf "$PUBLIC_RELEASES_DIR"
@@ -127,8 +133,6 @@ cp -R "$CLIENT_DIR" "$PUBLIC_RELEASES_DIR/sts2_lan_connect"
 cp "$CLIENT_ZIP" "$PUBLIC_RELEASES_DIR/sts2_lan_connect-release.zip"
 cp -R "$SERVICE_DIR" "$PUBLIC_RELEASES_DIR/sts2_lobby_service"
 cp "$SERVICE_ZIP" "$PUBLIC_RELEASES_DIR/sts2_lobby_service.zip"
-cp -R "$REGISTRY_DIR" "$PUBLIC_RELEASES_DIR/sts2_server_registry"
-cp "$REGISTRY_ZIP" "$PUBLIC_RELEASES_DIR/sts2_server_registry.zip"
 
 log "Removing legacy release-only layout..."
 rm -rf "$REPO_DIR/sts2_lan_connect" "$REPO_DIR/sts2_lobby_service"
