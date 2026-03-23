@@ -74,6 +74,24 @@ sudo ./scripts/install-lobby-service-linux.sh --install-dir /opt/sts2-lobby
 curl http://127.0.0.1:8787/health
 ```
 
+## 外部页面怎么打开
+
+当前 `lobby-service` 对外提供的是接口和管理面板，不提供给玩家直接浏览房间的独立网页大厅。
+
+自部署后，浏览器里最常用的外部地址是：
+
+- 子服务管理面板：`http://<你的公网 IP 或域名>:8787/server-admin`
+- 健康检查：`http://<你的公网 IP 或域名>:8787/health`
+- 公告公开接口：`http://<你的公网 IP 或域名>:8787/announcements`
+- 房间列表接口：`http://<你的公网 IP 或域名>:8787/rooms`
+
+说明：
+
+- 要让外部浏览器能打开，至少需要放行 `8787/TCP`
+- 如果你用了域名，直接把上面的 `<你的公网 IP 或域名>` 替换成域名即可
+- `/server-admin` 页面能打开，不代表一定能修改设置；如果没配置 `SERVER_ADMIN_PASSWORD_HASH` 和 `SERVER_ADMIN_SESSION_SECRET`，它只能浏览，不能登录保存
+- 玩家平时不需要打开这些网页；玩家加入房间走的是游戏客户端，浏览器页面主要给服主做健康检查和管理
+
 ## 手动运行
 
 ```bash

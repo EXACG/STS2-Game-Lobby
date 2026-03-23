@@ -57,6 +57,21 @@ curl http://127.0.0.1:8787/health
 curl http://127.0.0.1:8787/probe
 ```
 
+### 对外页面如何打开
+
+如果这台子服务已经绑定了公网 IP 或域名，并且安全组 / 防火墙已经放行 `8787/TCP`，外部浏览器可直接访问：
+
+- 管理面板：`http://<你的公网 IP 或域名>:8787/server-admin`
+- 健康检查：`http://<你的公网 IP 或域名>:8787/health`
+- 公告接口：`http://<你的公网 IP 或域名>:8787/announcements`
+- 房间列表接口：`http://<你的公网 IP 或域名>:8787/rooms`
+
+说明：
+
+- `lobby-service` 没有给玩家直接浏览房间的独立网页大厅；玩家联机仍通过游戏客户端完成
+- 服主如果要维护公告、公开列表申请和带宽设置，打开的是 `/server-admin`
+- 如果页面能打开但无法登录，优先检查 `.env` 里的 `SERVER_ADMIN_PASSWORD_HASH` 和 `SERVER_ADMIN_SESSION_SECRET`
+
 ### 方式 B：先打包再发到服务器
 
 ```bash
@@ -205,5 +220,6 @@ powershell -ExecutionPolicy Bypass -File .\install-sts2-lan-connect-windows.ps1 
 4. 进房后 `房间聊天` 是否能双向收发消息，未读角标和拖动保存位置是否正常
 5. 建房和加入是否正常；如果使用扩展人数补丁，确认房间人数元数据与实际配置一致
 6. `复制本地调试报告` 是否可用
-7. 子服 `/server-admin` 是否可登录并维护大厅公告
-8. 如果打开了“公开列表申请”，检查同步状态是否进入 `pending_review`、`approved` 或 `heartbeat_ok`
+7. 外部浏览器是否能打开 `http://<公网 IP 或域名>:8787/server-admin`
+8. 子服 `/server-admin` 是否可登录并维护大厅公告
+9. 如果打开了“公开列表申请”，检查同步状态是否进入 `pending_review`、`approved` 或 `heartbeat_ok`
