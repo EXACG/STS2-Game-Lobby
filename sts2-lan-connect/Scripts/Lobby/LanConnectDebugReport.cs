@@ -32,6 +32,7 @@ internal static class LanConnectDebugReport
         string? logPath = ResolveClientLogPath();
         string effectiveBaseUrl = LanConnectConfig.LobbyServerBaseUrl;
         string effectiveWsUrl = LanConnectLobbyEndpointDefaults.DeriveWsUrl(effectiveBaseUrl);
+        string effectiveRegistryBaseUrl = LanConnectConfig.LobbyRegistryBaseUrl;
         IReadOnlyList<string> logLines = ReadRelevantLogLines(logPath);
         Dictionary<string, List<string>> identifiers = ExtractIdentifiers(logLines);
 
@@ -54,6 +55,7 @@ internal static class LanConnectDebugReport
         builder.AppendLine($"config_updated_at_utc: {FormatFileTimestamp(configPath)}");
         builder.AppendLine($"lobby_base_url_effective: {effectiveBaseUrl}");
         builder.AppendLine($"lobby_ws_url_effective: {effectiveWsUrl}");
+        builder.AppendLine($"registry_base_url_effective: {effectiveRegistryBaseUrl}");
         builder.AppendLine($"has_lobby_overrides: {LanConnectConfig.HasLobbyServerOverrides}");
         builder.AppendLine($"has_bundled_defaults: {LanConnectLobbyEndpointDefaults.HasBundledDefaults()}");
         builder.AppendLine($"compatibility_profile: {LanConnectLobbyEndpointDefaults.GetCompatibilityProfile()}");

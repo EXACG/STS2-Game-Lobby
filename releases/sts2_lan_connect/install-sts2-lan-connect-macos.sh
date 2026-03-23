@@ -79,6 +79,13 @@ validate_package_dir() {
   fi
 }
 
+verify_installed_payload() {
+  local mod_dir="$1"
+
+  cmp -s "$PACKAGE_DIR/$ASSEMBLY_NAME.dll" "$mod_dir/$ASSEMBLY_NAME.dll" || die "Installed DLL does not match the selected package directory: $PACKAGE_DIR"
+  cmp -s "$PACKAGE_DIR/$ASSEMBLY_NAME.pck" "$mod_dir/$ASSEMBLY_NAME.pck" || die "Installed PCK does not match the selected package directory: $PACKAGE_DIR"
+}
+
 migrate_legacy_config_if_needed() {
   local mod_dir="$1"
   local legacy_config="$mod_dir/config.json"
@@ -206,6 +213,7 @@ install_mod() {
   mkdir -p "$(dirname "$mod_dir")"
   rm -rf "$mod_dir"
   mv "$temp_mod_dir" "$mod_dir"
+  verify_installed_payload "$mod_dir"
   refresh_app_signature
 
   if [[ "$SYNC_SAVES" -eq 0 ]]; then

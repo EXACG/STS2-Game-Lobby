@@ -12,7 +12,7 @@ internal static class LanConnectConstants
 
     public const string DefaultCompatibilityProfile = "test_relaxed";
 
-    public const string DefaultConnectionStrategy = "relay-first";
+    public const string DefaultConnectionStrategy = "relay-only";
 
     public const string DefaultRoomStatus = "open";
 

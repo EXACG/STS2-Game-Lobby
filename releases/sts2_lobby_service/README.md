@@ -10,6 +10,9 @@
 - 保存续局大厅房间的 `savedRun` 元数据与可接管角色槽位
 - 在 join 前置校验里区分 `version_mismatch`、`mod_version_mismatch`、`mod_mismatch`、`room_started`、`room_full`
 - 记录 `direct_timeout` / `relay_success` / `relay_failure` 等连接阶段日志
+- 内置子服务器控制面板 `/server-admin`
+- 子服务器控制面板可维护大厅公告，并通过 `GET /announcements` 下发给客户端
+- 向独立母面板上报公开申请、claim 令牌和 3 分钟心跳
 
 它不负责：
 
@@ -19,7 +22,34 @@
 
 当前 relay 的定位是“直连失败时的房间级兜底路径”，不是完整的独立联机协议。
 
-## 一键部署
+## Docker 部署
+
+如果这台机器已经同时承担母面板和大厅服务，当前更推荐直接使用仓库根目录的双服务 Docker 栈：
+
+```bash
+sudo ./scripts/install-server-stack-docker-linux.sh --install-dir /opt/sts2-server-stack-docker
+```
+
+如果只想单独容器化当前 `lobby-service`，也可以直接在本目录下使用：
+
+```bash
+cp deploy/lobby-service.docker.env.example deploy/lobby-service.docker.env
+$EDITOR deploy/lobby-service.docker.env
+
+docker compose -f deploy/docker-compose.lobby-service.yml build
+docker compose -f deploy/docker-compose.lobby-service.yml up -d
+```
+
+默认会把 `./deploy/data/lobby-service` 挂到容器内 `/app/data`，并把 `SERVER_ADMIN_STATE_FILE` 指向 `/app/data/server-admin.json`。
+
+如果部署机器拉 Docker Hub 很慢，可以先复制 `deploy/.env.example` 为 `deploy/.env`，再把 `STS2_NODE_IMAGE` 改成国内镜像。
+
+日志维护默认由 Docker `json-file` 轮转处理：
+
+- `10MB` 单文件上限
+- `5` 个历史文件
+
+## systemd 一键部署
 
 从仓库根目录执行：
 
@@ -55,12 +85,12 @@ npm start
 
 - HTTP: `http://0.0.0.0:8787`
 - WebSocket: `ws://0.0.0.0:8787/control`
-- Relay UDP: `udp://0.0.0.0:39000-39511`
+- Relay UDP: `udp://0.0.0.0:39000-39149`
 
 公网部署时至少需要放行：
 
 - `8787/TCP`
-- `39000-39511/UDP`
+- `39000-39149/UDP`
 
 ## 打包分发
 
@@ -74,6 +104,17 @@ npm start
 
 - `lobby-service/release/sts2_lobby_service/`
 - `lobby-service/release/sts2_lobby_service.zip`
+
+打包结果现在也会包含：
+
+- `Dockerfile`
+- `.dockerignore`
+- `deploy/docker-compose.lobby-service.yml`
+- `deploy/lobby-service.docker.env.example`
+
+如果这个服务是放进公共双服务 Docker 栈里运行，当前推荐直接使用宿主机网络，而不是再让 Docker bridge 发布整段 relay UDP 端口。
+
+这是为了规避已在线上复现过的问题：某些云主机上，`lobby-service` 一旦通过 bridge 映射大段 UDP relay 端口，可能会同时拖慢 `8787`、`18787`，甚至让 SSH 只剩 TCP 连接但不回 banner。
 
 ## 环境变量
 
@@ -91,6 +132,18 @@ npm start
 - `STRICT_GAME_VERSION_CHECK`
 - `STRICT_MOD_VERSION_CHECK`
 - `CONNECTION_STRATEGY`
+- `SERVER_ADMIN_USERNAME`
+- `SERVER_ADMIN_PASSWORD_HASH`
+- `SERVER_ADMIN_SESSION_SECRET`
+- `SERVER_ADMIN_SESSION_TTL_HOURS`
+- `SERVER_ADMIN_STATE_FILE`
+- `SERVER_REGISTRY_BASE_URL`
+- `SERVER_REGISTRY_SYNC_INTERVAL_SECONDS`
+- `SERVER_REGISTRY_SYNC_TIMEOUT_MS`
+- `SERVER_REGISTRY_PUBLIC_BASE_URL`
+- `SERVER_REGISTRY_PUBLIC_WS_URL`
+- `SERVER_REGISTRY_BANDWIDTH_PROBE_URL`
+- `SERVER_REGISTRY_PROBE_FILE_BYTES`
 
 示例见 [`.env.example`](./.env.example)。
 
@@ -100,13 +153,24 @@ npm start
 - `STRICT_MOD_VERSION_CHECK=false` 时，服务端不会因为 MOD 版本字符串不同而拒绝 join
 - 如果客户端和房主都上报了 `modList`，服务端会额外比较双方缺失项，并在 `mod_mismatch` 里返回 `missingModsOnLocal` / `missingModsOnHost`
 - `CONNECTION_STRATEGY` 可选 `direct-first`、`relay-first`、`relay-only`
-- 公开服建议保持严格校验；跨端测试服可以按需放宽并切到 `relay-only`
+- 当前公开服部署默认使用 `relay-only`；如果要回到其他策略，请显式覆盖 `CONNECTION_STRATEGY`
+- `SERVER_ADMIN_*` 控制子面板登录，不配置密码哈希和会话密钥时，`/server-admin` 页面仍可打开，但无法登录修改设置
+- `SERVER_ADMIN_STATE_FILE` 默认保存这台子服的显示名称、公开设置、公告配置和同步状态
+- `SERVER_REGISTRY_BASE_URL` 指向母面板地址；配置后子服务会按 3 分钟周期自动同步公开申请 / claim / 心跳
+- 如果这个服务在公共 Docker 栈里以宿主机网络运行，`SERVER_REGISTRY_BASE_URL` 应改成 `http://127.0.0.1:18787`
+- `SERVER_REGISTRY_PUBLIC_*` 用于告诉母面板“这台子服务器对外的 HTTP / WS / 带宽探针地址”
 
 ## API
 
 - `GET /health`
 - `GET /probe`
+- `GET /registry/bandwidth-probe.bin`
+- `GET /server-admin`
+- `POST /server-admin/login`
+- `GET /server-admin/settings`
+- `PATCH /server-admin/settings`
 - `GET /rooms`
+- `GET /announcements`
 - `POST /rooms`
 - `POST /rooms/:id/join`
 - `POST /rooms/:id/heartbeat`
@@ -171,5 +235,11 @@ journalctl -u sts2-lobby.service -n 100 --no-pager
 
 如果日志里能看到 `create room`、`join ticket issued`，却始终没有 `relay_host_registered`，通常不是服务端 API 挂了，而是客户端到 relay 端口段的 UDP 没有真正打到服务器。常见原因包括：
 
-- 服务器公网 `39000-39511/UDP` 没有放行
+- 服务器公网 `39000-39149/UDP` 没有放行
 - 客户端启用了 `Clash`、`Surge`、系统全局代理或 `TUN`，大厅服务器 IP 没有走 `DIRECT`
+
+如果当前是 Docker 部署，则改看：
+
+```bash
+docker compose -f deploy/docker-compose.lobby-service.yml logs --tail 200 -f
+```

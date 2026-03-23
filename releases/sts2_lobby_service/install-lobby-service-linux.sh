@@ -29,12 +29,24 @@ WS_PATH="${STS2_LOBBY_WS_PATH:-/control}"
 RELAY_BIND_HOST="${STS2_LOBBY_RELAY_BIND_HOST:-$HOST}"
 RELAY_PUBLIC_HOST="${STS2_LOBBY_RELAY_PUBLIC_HOST:-}"
 RELAY_PORT_START="${STS2_LOBBY_RELAY_PORT_START:-39000}"
-RELAY_PORT_END="${STS2_LOBBY_RELAY_PORT_END:-39511}"
+RELAY_PORT_END="${STS2_LOBBY_RELAY_PORT_END:-39149}"
 RELAY_HOST_IDLE_SECONDS="${STS2_LOBBY_RELAY_HOST_IDLE_SECONDS:-90}"
 RELAY_CLIENT_IDLE_SECONDS="${STS2_LOBBY_RELAY_CLIENT_IDLE_SECONDS:-180}"
 STRICT_GAME_VERSION_CHECK="${STS2_LOBBY_STRICT_GAME_VERSION_CHECK:-false}"
 STRICT_MOD_VERSION_CHECK="${STS2_LOBBY_STRICT_MOD_VERSION_CHECK:-false}"
-CONNECTION_STRATEGY="${STS2_LOBBY_CONNECTION_STRATEGY:-relay-first}"
+CONNECTION_STRATEGY="${STS2_LOBBY_CONNECTION_STRATEGY:-relay-only}"
+SERVER_ADMIN_USERNAME="${STS2_SERVER_ADMIN_USERNAME:-admin}"
+SERVER_ADMIN_PASSWORD_HASH="${STS2_SERVER_ADMIN_PASSWORD_HASH:-}"
+SERVER_ADMIN_SESSION_SECRET="${STS2_SERVER_ADMIN_SESSION_SECRET:-}"
+SERVER_ADMIN_SESSION_TTL_HOURS="${STS2_SERVER_ADMIN_SESSION_TTL_HOURS:-168}"
+SERVER_ADMIN_STATE_FILE="${STS2_SERVER_ADMIN_STATE_FILE:-./data/server-admin.json}"
+SERVER_REGISTRY_BASE_URL="${STS2_SERVER_REGISTRY_BASE_URL:-}"
+SERVER_REGISTRY_SYNC_INTERVAL_SECONDS="${STS2_SERVER_REGISTRY_SYNC_INTERVAL_SECONDS:-180}"
+SERVER_REGISTRY_SYNC_TIMEOUT_MS="${STS2_SERVER_REGISTRY_SYNC_TIMEOUT_MS:-5000}"
+SERVER_REGISTRY_PUBLIC_BASE_URL="${STS2_SERVER_REGISTRY_PUBLIC_BASE_URL:-}"
+SERVER_REGISTRY_PUBLIC_WS_URL="${STS2_SERVER_REGISTRY_PUBLIC_WS_URL:-}"
+SERVER_REGISTRY_BANDWIDTH_PROBE_URL="${STS2_SERVER_REGISTRY_BANDWIDTH_PROBE_URL:-}"
+SERVER_REGISTRY_PROBE_FILE_BYTES="${STS2_SERVER_REGISTRY_PROBE_FILE_BYTES:-104857600}"
 NODE_BIN="${NODE_BIN:-$(command -v node || true)}"
 NPM_BIN="${NPM_BIN:-$(command -v npm || true)}"
 SKIP_SYSTEMD=0
@@ -59,13 +71,13 @@ Options:
   --relay-port-start <value>
                         RELAY_PORT_START written into .env. Default: 39000
   --relay-port-end <value>
-                        RELAY_PORT_END written into .env. Default: 39511
+                        RELAY_PORT_END written into .env. Default: 39149
   --strict-game-version-check <true|false>
                         STRICT_GAME_VERSION_CHECK written into .env. Default: false
   --strict-mod-version-check <true|false>
                         STRICT_MOD_VERSION_CHECK written into .env. Default: false
   --connection-strategy <direct-first|relay-first|relay-only>
-                        CONNECTION_STRATEGY written into .env. Default: relay-first
+                        CONNECTION_STRATEGY written into .env. Default: relay-only
   --run-user <name>     systemd User value when auto-installing the service.
   --run-group <name>    systemd Group value when auto-installing the service.
   --skip-systemd        Only install files and build the service; do not create/start systemd unit.
@@ -187,6 +199,8 @@ fi
 APP_DIR="$INSTALL_DIR/lobby-service"
 ENV_FILE="$APP_DIR/.env"
 START_SCRIPT="$INSTALL_DIR/start-lobby-service.sh"
+NODE_BIN_DIR="$(dirname "$NODE_BIN")"
+SYSTEM_PATH="$NODE_BIN_DIR:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 
 mkdir -p "$INSTALL_DIR"
 
@@ -228,6 +242,18 @@ RELAY_CLIENT_IDLE_SECONDS=$RELAY_CLIENT_IDLE_SECONDS
 STRICT_GAME_VERSION_CHECK=$STRICT_GAME_VERSION_CHECK
 STRICT_MOD_VERSION_CHECK=$STRICT_MOD_VERSION_CHECK
 CONNECTION_STRATEGY=$CONNECTION_STRATEGY
+SERVER_ADMIN_USERNAME=$SERVER_ADMIN_USERNAME
+SERVER_ADMIN_PASSWORD_HASH=$SERVER_ADMIN_PASSWORD_HASH
+SERVER_ADMIN_SESSION_SECRET=$SERVER_ADMIN_SESSION_SECRET
+SERVER_ADMIN_SESSION_TTL_HOURS=$SERVER_ADMIN_SESSION_TTL_HOURS
+SERVER_ADMIN_STATE_FILE=$SERVER_ADMIN_STATE_FILE
+SERVER_REGISTRY_BASE_URL=$SERVER_REGISTRY_BASE_URL
+SERVER_REGISTRY_SYNC_INTERVAL_SECONDS=$SERVER_REGISTRY_SYNC_INTERVAL_SECONDS
+SERVER_REGISTRY_SYNC_TIMEOUT_MS=$SERVER_REGISTRY_SYNC_TIMEOUT_MS
+SERVER_REGISTRY_PUBLIC_BASE_URL=$SERVER_REGISTRY_PUBLIC_BASE_URL
+SERVER_REGISTRY_PUBLIC_WS_URL=$SERVER_REGISTRY_PUBLIC_WS_URL
+SERVER_REGISTRY_BANDWIDTH_PROBE_URL=$SERVER_REGISTRY_BANDWIDTH_PROBE_URL
+SERVER_REGISTRY_PROBE_FILE_BYTES=$SERVER_REGISTRY_PROBE_FILE_BYTES
 EOF
   log "Created default environment file: $ENV_FILE"
 else
@@ -243,6 +269,7 @@ log "Building lobby service"
 cat > "$START_SCRIPT" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
+export PATH="$SYSTEM_PATH"
 cd "$APP_DIR"
 exec "$NPM_BIN" start
 EOF
@@ -278,7 +305,8 @@ After=network.target
 Type=simple
 WorkingDirectory=$APP_DIR
 EnvironmentFile=$ENV_FILE
-ExecStart=$NPM_BIN start
+Environment=PATH=$SYSTEM_PATH
+ExecStart=$START_SCRIPT
 Restart=always
 RestartSec=3
 User=$RUN_AS_USER
@@ -290,6 +318,11 @@ EOF
 
 log "Installed systemd unit: $UNIT_PATH"
 systemctl daemon-reload
-systemctl enable --now "$SERVICE_NAME"
+systemctl enable "$SERVICE_NAME"
+if systemctl is-active --quiet "$SERVICE_NAME"; then
+  systemctl restart "$SERVICE_NAME"
+else
+  systemctl start "$SERVICE_NAME"
+fi
 log "Service started. Health check: curl http://127.0.0.1:$PORT/health"
 log "If relay fallback is needed, open UDP ports $RELAY_PORT_START-$RELAY_PORT_END on the server firewall/security group."

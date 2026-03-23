@@ -34,6 +34,26 @@ internal sealed class LobbyRoomSummary
     public LobbySavedRunInfo? SavedRun { get; set; }
 }
 
+internal sealed class LobbyAnnouncementItem
+{
+    public string Id { get; set; } = string.Empty;
+
+    public string Type { get; set; } = "info";
+
+    public string Title { get; set; } = string.Empty;
+
+    public string DateLabel { get; set; } = string.Empty;
+
+    public string Body { get; set; } = string.Empty;
+
+    public bool Enabled { get; set; } = true;
+}
+
+internal sealed class LobbyAnnouncementListResponse
+{
+    public List<LobbyAnnouncementItem> Announcements { get; set; } = new();
+}
+
 internal sealed class LobbyDirectoryServerListResponse
 {
     public bool Ok { get; set; }
@@ -54,6 +74,47 @@ internal sealed class LobbyDirectoryServerEntry
     public int Rooms { get; set; }
 
     public DateTimeOffset LastVerifiedAt { get; set; }
+
+    public double? CurrentBandwidthMbps { get; set; }
+
+    public double? BandwidthCapacityMbps { get; set; }
+
+    public double? ResolvedCapacityMbps { get; set; }
+
+    public double? BandwidthUtilizationRatio { get; set; }
+
+    public string CreateRoomGuardStatus { get; set; } = "allow";
+
+    public string CapacitySource { get; set; } = "unknown";
+}
+
+internal sealed class LobbyHealthResponse
+{
+    public bool Ok { get; set; }
+
+    public int Rooms { get; set; }
+
+    public bool StrictGameVersionCheck { get; set; }
+
+    public bool StrictModVersionCheck { get; set; }
+
+    public string ConnectionStrategy { get; set; } = string.Empty;
+
+    public bool CreateRoomGuardApplies { get; set; }
+
+    public string CreateRoomGuardStatus { get; set; } = "allow";
+
+    public double? CurrentBandwidthMbps { get; set; }
+
+    public double? BandwidthCapacityMbps { get; set; }
+
+    public double? ResolvedCapacityMbps { get; set; }
+
+    public double? BandwidthUtilizationRatio { get; set; }
+
+    public string CapacitySource { get; set; } = "unknown";
+
+    public double? CreateRoomThresholdRatio { get; set; }
 }
 
 internal sealed class LobbySavedRunInfo
@@ -255,4 +316,16 @@ internal sealed class LobbyErrorDetails
     public List<string>? MissingModsOnLocal { get; set; }
 
     public List<string>? MissingModsOnHost { get; set; }
+
+    public double? CurrentBandwidthMbps { get; set; }
+
+    public double? BandwidthCapacityMbps { get; set; }
+
+    public double? ResolvedCapacityMbps { get; set; }
+
+    public double? BandwidthUtilizationRatio { get; set; }
+
+    public string? CapacitySource { get; set; }
+
+    public double? CreateRoomThresholdRatio { get; set; }
 }

@@ -11,6 +11,9 @@ internal sealed class LanConnectBundledLobbyDefaults
     [JsonPropertyName("baseUrl")]
     public string BaseUrl { get; set; } = string.Empty;
 
+    [JsonPropertyName("registryBaseUrl")]
+    public string RegistryBaseUrl { get; set; } = string.Empty;
+
     [JsonPropertyName("compatibilityProfile")]
     public string CompatibilityProfile { get; set; } = string.Empty;
 
@@ -21,11 +24,13 @@ internal sealed class LanConnectBundledLobbyDefaults
 internal static class LanConnectLobbyEndpointDefaults
 {
     private const string DefaultsFileName = "lobby-defaults.json";
+    private const string DefaultRegistryBaseUrl = "http://47.111.146.69:18787";
 
     private static readonly object Sync = new();
 
     private static bool _loaded;
     private static string _defaultBaseUrl = string.Empty;
+    private static string _registryBaseUrl = DefaultRegistryBaseUrl;
     private static string _compatibilityProfile = LanConnectConstants.DefaultCompatibilityProfile;
     private static string _connectionStrategy = LanConnectConstants.DefaultConnectionStrategy;
 
@@ -39,6 +44,12 @@ internal static class LanConnectLobbyEndpointDefaults
     {
         EnsureLoaded();
         return !string.IsNullOrWhiteSpace(_defaultBaseUrl);
+    }
+
+    public static string GetRegistryBaseUrl()
+    {
+        EnsureLoaded();
+        return _registryBaseUrl;
     }
 
     public static string GetCompatibilityProfile()
@@ -109,6 +120,11 @@ internal static class LanConnectLobbyEndpointDefaults
             }
 
             _defaultBaseUrl = baseUrl;
+            _registryBaseUrl = NormalizeRegistryBaseUrl(defaults?.RegistryBaseUrl);
+            if (string.IsNullOrWhiteSpace(_registryBaseUrl))
+            {
+                _registryBaseUrl = DefaultRegistryBaseUrl;
+            }
             _compatibilityProfile = NormalizeCompatibilityProfile(defaults?.CompatibilityProfile);
             _connectionStrategy = NormalizeConnectionStrategy(defaults?.ConnectionStrategy);
         }
@@ -116,12 +132,20 @@ internal static class LanConnectLobbyEndpointDefaults
         {
             Log.Warn($"sts2_lan_connect failed to read bundled lobby defaults: {ex.Message}");
             _defaultBaseUrl = string.Empty;
+            _registryBaseUrl = DefaultRegistryBaseUrl;
             _compatibilityProfile = LanConnectConstants.DefaultCompatibilityProfile;
             _connectionStrategy = LanConnectConstants.DefaultConnectionStrategy;
         }
     }
 
     private static string NormalizeBaseUrl(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value)
+            ? string.Empty
+            : value.Trim().TrimEnd('/');
+    }
+
+    private static string NormalizeRegistryBaseUrl(string? value)
     {
         return string.IsNullOrWhiteSpace(value)
             ? string.Empty

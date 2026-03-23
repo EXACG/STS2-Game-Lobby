@@ -49,6 +49,12 @@ internal sealed class LobbyApiClient : IDisposable
         return await SendAsync<List<LobbyRoomSummary>>("rooms", HttpMethod.Get, null, cancellationToken) ?? new List<LobbyRoomSummary>();
     }
 
+    public async Task<IReadOnlyList<LobbyAnnouncementItem>> GetAnnouncementsAsync(CancellationToken cancellationToken = default)
+    {
+        LobbyAnnouncementListResponse response = await SendAsync<LobbyAnnouncementListResponse>("announcements", HttpMethod.Get, null, cancellationToken);
+        return response.Announcements ?? new List<LobbyAnnouncementItem>();
+    }
+
     public async Task<double> MeasureProbeRttAsync(CancellationToken cancellationToken = default)
     {
         Uri requestUri = new(_baseUri, "probe");
@@ -63,6 +69,11 @@ internal sealed class LobbyApiClient : IDisposable
         GD.Print(
             $"sts2_lan_connect lobby api: GET {requestUri} -> {(int)response.StatusCode} probeRttMs={stopwatch.Elapsed.TotalMilliseconds:0}");
         return stopwatch.Elapsed.TotalMilliseconds;
+    }
+
+    public Task<LobbyHealthResponse> GetHealthAsync(CancellationToken cancellationToken = default)
+    {
+        return SendAsync<LobbyHealthResponse>("health", HttpMethod.Get, null, cancellationToken);
     }
 
     public Task<LobbyCreateRoomResponse> CreateRoomAsync(LobbyCreateRoomRequest request, CancellationToken cancellationToken = default)

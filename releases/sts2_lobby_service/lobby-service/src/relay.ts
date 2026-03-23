@@ -1,4 +1,5 @@
 import dgram, { type RemoteInfo } from "node:dgram";
+import { RollingBandwidthMeter } from "./rolling-bandwidth.js";
 
 const MAGIC = Buffer.from("STS2R1", "ascii");
 const MESSAGE_TYPE_HOST_REGISTER = 1;
@@ -22,6 +23,15 @@ export interface RelayLogEvent {
   phase: string;
   roomId: string;
   detail: string;
+}
+
+export interface RelayTrafficSnapshot {
+  currentBandwidthMbps: number;
+  totalBytesInWindow: number;
+  windowMs: number;
+  activeRooms: number;
+  activeHosts: number;
+  activeClients: number;
 }
 
 interface ClientBinding {
@@ -53,6 +63,7 @@ class RoomRelaySession {
     bindHost: string,
     private readonly config: RelayManagerConfig,
     private readonly logEvent: (event: RelayLogEvent) => void,
+    private readonly recordTraffic: (bytes: number) => void,
   ) {
     this.socket = dgram.createSocket("udp4");
     this.socket.on("message", (message, remote) => {
@@ -140,6 +151,7 @@ class RoomRelaySession {
   }
 
   private handleMessage(message: Buffer, remote: RemoteInfo) {
+    this.recordTraffic(message.byteLength);
     const parsed = parseHostMessage(message);
     if (parsed) {
       this.handleHostMessage(parsed, remote);
@@ -193,6 +205,7 @@ class RoomRelaySession {
     }
 
     client.lastSeenAt = Date.now();
+    this.recordTraffic(message.payload.byteLength);
     this.socket.send(message.payload, client.endpoint.port, client.endpoint.address);
   }
 
@@ -221,6 +234,7 @@ class RoomRelaySession {
     }
 
     const envelope = encodeClientData(client.clientId, message);
+    this.recordTraffic(envelope.byteLength);
     this.socket.send(envelope, this.hostEndpoint.port, this.hostEndpoint.address);
   }
 }
@@ -229,6 +243,7 @@ export class RoomRelayManager {
   private readonly sessions = new Map<string, RoomRelaySession>();
   private readonly portsInUse = new Set<number>();
   private readonly cleanupTimer: NodeJS.Timeout;
+  private readonly bandwidthMeter = new RollingBandwidthMeter(30_000);
 
   constructor(
     private readonly config: RelayManagerConfig,
@@ -266,6 +281,9 @@ export class RoomRelayManager {
       this.config.bindHost,
       this.config,
       this.logEvent,
+      (bytes) => {
+        this.bandwidthMeter.recordBytes(bytes);
+      },
     );
     session.setAdvertisedHost(advertisedHost);
     this.sessions.set(roomId, session);
@@ -330,6 +348,33 @@ export class RoomRelayManager {
 
     this.sessions.clear();
     this.portsInUse.clear();
+  }
+
+  getCurrentBandwidthMbps(now = Date.now()) {
+    return this.bandwidthMeter.getSnapshot(now).currentBandwidthMbps;
+  }
+
+  getTrafficSnapshot(now = Date.now()): RelayTrafficSnapshot {
+    const bandwidthSnapshot = this.bandwidthMeter.getSnapshot(now);
+    let activeHosts = 0;
+    let activeClients = 0;
+
+    for (const session of this.sessions.values()) {
+      if (session.hasActiveHost()) {
+        activeHosts += 1;
+      }
+
+      activeClients += session.getClientCount();
+    }
+
+    return {
+      currentBandwidthMbps: bandwidthSnapshot.currentBandwidthMbps,
+      totalBytesInWindow: bandwidthSnapshot.totalBytesInWindow,
+      windowMs: bandwidthSnapshot.windowMs,
+      activeRooms: this.sessions.size,
+      activeHosts,
+      activeClients,
+    };
   }
 
   private reservePort() {

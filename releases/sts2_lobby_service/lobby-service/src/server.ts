@@ -1,9 +1,16 @@
+import { randomUUID } from "node:crypto";
+import { once } from "node:events";
 import express, { type NextFunction, type Request, type Response } from "express";
 import { createServer } from "node:http";
 import { WebSocketServer, type WebSocket } from "ws";
+import { CreateRoomBandwidthGuard } from "./bandwidth-guard.js";
 import { assertRelayCreateReady, assertRelayJoinReady } from "./join-guard.js";
 import { RoomRelayManager } from "./relay.js";
 import { cleanupExpiredRooms } from "./room-cleanup.js";
+import { signServerAdminSession, verifyServerAdminPassword, verifySignedServerAdminSession } from "./server-admin-auth.js";
+import { ServerAdminStateStore } from "./server-admin-state.js";
+import { createServerRegistrySyncService } from "./server-admin-sync.js";
+import { renderServerAdminPage } from "./server-admin-ui.js";
 import {
   LobbyStore,
   LobbyStoreError,
@@ -22,12 +29,24 @@ const env = {
   relayBindHost: process.env.RELAY_BIND_HOST ?? process.env.HOST ?? "0.0.0.0",
   relayPublicHost: process.env.RELAY_PUBLIC_HOST ?? "",
   relayPortStart: Number.parseInt(process.env.RELAY_PORT_START ?? "39000", 10),
-  relayPortEnd: Number.parseInt(process.env.RELAY_PORT_END ?? "39511", 10),
+  relayPortEnd: Number.parseInt(process.env.RELAY_PORT_END ?? "39149", 10),
   relayHostIdleMs: Number.parseInt(process.env.RELAY_HOST_IDLE_SECONDS ?? "20", 10) * 1000,
   relayClientIdleMs: Number.parseInt(process.env.RELAY_CLIENT_IDLE_SECONDS ?? "90", 10) * 1000,
   strictGameVersionCheck: parseBooleanEnv(process.env.STRICT_GAME_VERSION_CHECK, true),
   strictModVersionCheck: parseBooleanEnv(process.env.STRICT_MOD_VERSION_CHECK, true),
   connectionStrategy: parseConnectionStrategyEnv(process.env.CONNECTION_STRATEGY),
+  serverAdminUsername: process.env.SERVER_ADMIN_USERNAME ?? "admin",
+  serverAdminPasswordHash: optionalEnv(process.env.SERVER_ADMIN_PASSWORD_HASH),
+  serverAdminSessionSecret: optionalEnv(process.env.SERVER_ADMIN_SESSION_SECRET),
+  serverAdminSessionTtlMs: Number.parseInt(process.env.SERVER_ADMIN_SESSION_TTL_HOURS ?? "168", 10) * 60 * 60 * 1000,
+  serverAdminStateFile: process.env.SERVER_ADMIN_STATE_FILE ?? `${process.cwd()}/data/server-admin.json`,
+  serverRegistryBaseUrl: optionalEnv(process.env.SERVER_REGISTRY_BASE_URL) ?? "",
+  serverRegistrySyncIntervalMs: Number.parseInt(process.env.SERVER_REGISTRY_SYNC_INTERVAL_SECONDS ?? "180", 10) * 1000,
+  serverRegistrySyncTimeoutMs: Number.parseInt(process.env.SERVER_REGISTRY_SYNC_TIMEOUT_MS ?? "5000", 10),
+  serverRegistryPublicBaseUrl: process.env.SERVER_REGISTRY_PUBLIC_BASE_URL ?? buildRegistryPublicBaseUrl(),
+  serverRegistryPublicWsUrl: process.env.SERVER_REGISTRY_PUBLIC_WS_URL ?? buildRegistryPublicWsUrl(),
+  serverRegistryBandwidthProbeUrl: process.env.SERVER_REGISTRY_BANDWIDTH_PROBE_URL ?? buildRegistryBandwidthProbeUrl(),
+  serverRegistryProbeFileBytes: Number.parseInt(process.env.SERVER_REGISTRY_PROBE_FILE_BYTES ?? String(100 * 1024 * 1024), 10),
 };
 
 const store = new LobbyStore({
@@ -56,6 +75,21 @@ const relayManager = new RoomRelayManager(
     console.log(`[relay] ${phase} room=${roomId} ${detail}`);
   },
 );
+const serverAdminStateStore = new ServerAdminStateStore(env.serverAdminStateFile);
+const createRoomBandwidthGuard = new CreateRoomBandwidthGuard();
+const serverRegistrySync = createServerRegistrySyncService({
+  env: {
+    registryBaseUrl: env.serverRegistryBaseUrl,
+    timeoutMs: env.serverRegistrySyncTimeoutMs,
+    publicBaseUrl: env.serverRegistryPublicBaseUrl,
+    publicWsUrl: env.serverRegistryPublicWsUrl,
+    bandwidthProbeUrl: env.serverRegistryBandwidthProbeUrl,
+  },
+  stateStore: serverAdminStateStore,
+  getRoomCount: () => store.listRooms().length,
+  getGuardSnapshot: () => getCreateRoomGuardSnapshot(),
+});
+const serverAdminSessions = new Map<string, ServerAdminSession>();
 
 const app = express();
 app.use(express.json({ limit: "32kb" }));
@@ -72,12 +106,27 @@ app.use((req, res, next) => {
 
 app.get("/health", (_req, res) => {
   cleanupExpiredRoomsNow();
+  const guardSnapshot = getCreateRoomGuardSnapshot();
+  const relayTrafficSnapshot = relayManager.getTrafficSnapshot();
   res.json({
     ok: true,
     rooms: store.listRooms().length,
     strictGameVersionCheck: env.strictGameVersionCheck,
     strictModVersionCheck: env.strictModVersionCheck,
     connectionStrategy: env.connectionStrategy,
+    createRoomGuardApplies: guardSnapshot.createRoomGuardApplies,
+    createRoomGuardStatus: guardSnapshot.createRoomGuardStatus,
+    currentBandwidthMbps: guardSnapshot.currentBandwidthMbps,
+    bandwidthCapacityMbps: guardSnapshot.bandwidthCapacityMbps,
+    resolvedCapacityMbps: guardSnapshot.resolvedCapacityMbps,
+    bandwidthUtilizationRatio: guardSnapshot.bandwidthUtilizationRatio,
+    capacitySource: guardSnapshot.capacitySource,
+    createRoomThresholdRatio: guardSnapshot.createRoomThresholdRatio,
+    relayTrafficWindowMs: relayTrafficSnapshot.windowMs,
+    relayTrafficBytesInWindow: relayTrafficSnapshot.totalBytesInWindow,
+    relayActiveRooms: relayTrafficSnapshot.activeRooms,
+    relayActiveHosts: relayTrafficSnapshot.activeHosts,
+    relayActiveClients: relayTrafficSnapshot.activeClients,
   });
 });
 
@@ -87,9 +136,26 @@ app.get("/probe", (_req, res) => {
   });
 });
 
+app.get("/registry/bandwidth-probe.bin", async (_req, res, next) => {
+  try {
+    res.setHeader("content-type", "application/octet-stream");
+    res.setHeader("content-length", String(env.serverRegistryProbeFileBytes));
+    res.setHeader("cache-control", "no-store");
+    await streamZeroBytes(res, env.serverRegistryProbeFileBytes);
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.get("/rooms", (_req, res) => {
   cleanupExpiredRoomsNow();
   res.json(store.listRooms());
+});
+
+app.get("/announcements", (_req, res) => {
+  res.json({
+    announcements: serverAdminStateStore.getPublicAnnouncements(),
+  });
 });
 
 app.post("/rooms", (req, res, next) => {
@@ -102,6 +168,22 @@ app.post("/rooms", (req, res, next) => {
 
   try {
     cleanupExpiredRoomsNow();
+    const guardSnapshot = getCreateRoomGuardSnapshot();
+    if (guardSnapshot.createRoomGuardApplies && guardSnapshot.createRoomGuardStatus === "block") {
+      throw new LobbyStoreError(
+        503,
+        "server_bandwidth_near_capacity",
+        "当前服务器接近带宽上限。为保证现有连接稳定，请切换到其他公共服务器后再创建房间。",
+        {
+          currentBandwidthMbps: guardSnapshot.currentBandwidthMbps,
+          bandwidthCapacityMbps: guardSnapshot.bandwidthCapacityMbps,
+          resolvedCapacityMbps: guardSnapshot.resolvedCapacityMbps,
+          bandwidthUtilizationRatio: guardSnapshot.bandwidthUtilizationRatio,
+          capacitySource: guardSnapshot.capacitySource,
+          createRoomThresholdRatio: guardSnapshot.createRoomThresholdRatio,
+        },
+      );
+    }
     const body = req.body as Partial<CreateRoomInput> | undefined;
     const roomInput: CreateRoomInput = {
       roomName: requiredString(body?.roomName, "roomName"),
@@ -258,6 +340,127 @@ app.post("/rooms/:id/connection-events", (req, res, next) => {
   }
 });
 
+app.get("/server-admin", (_req, res) => {
+  res.type("html").send(renderServerAdminPage());
+});
+
+app.post("/server-admin/login", (req, res, next) => {
+  try {
+    ensureServerAdminConfigured();
+    const body = req.body as { username?: string; password?: string } | undefined;
+    const username = requiredString(body?.username, "username");
+    const password = requiredString(body?.password, "password");
+    if (username !== env.serverAdminUsername || !verifyServerAdminPassword(password, env.serverAdminPasswordHash)) {
+      throw new HttpError(401, "invalid_server_admin_credentials", "用户名或密码不正确。");
+    }
+
+    const session = createServerAdminSession(username);
+    setServerAdminCookie(res, session.id);
+    res.json({
+      id: session.id,
+      username: session.username,
+      expiresAt: new Date(session.expiresAt).toISOString(),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post("/server-admin/logout", (req, res, next) => {
+  try {
+    const session = requireServerAdminSession(req);
+    serverAdminSessions.delete(session.id);
+    clearServerAdminCookie(res);
+    res.status(204).send();
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/server-admin/session", (req, res, next) => {
+  try {
+    const session = requireServerAdminSession(req);
+    res.json({
+      id: session.id,
+      username: session.username,
+      expiresAt: new Date(session.expiresAt).toISOString(),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get("/server-admin/settings", (req, res, next) => {
+  try {
+    requireServerAdminSession(req);
+    const guardSnapshot = getCreateRoomGuardSnapshot();
+    const relayTrafficSnapshot = relayManager.getTrafficSnapshot();
+    res.json({
+      ...serverAdminStateStore.getSettingsView(),
+      registryBaseUrl: env.serverRegistryBaseUrl,
+      publicBaseUrl: env.serverRegistryPublicBaseUrl,
+      publicWsUrl: env.serverRegistryPublicWsUrl,
+      bandwidthProbeUrl: env.serverRegistryBandwidthProbeUrl,
+      currentBandwidthMbps: guardSnapshot.currentBandwidthMbps,
+      resolvedCapacityMbps: guardSnapshot.resolvedCapacityMbps,
+      bandwidthUtilizationRatio: guardSnapshot.bandwidthUtilizationRatio,
+      capacitySource: guardSnapshot.capacitySource,
+      createRoomGuardStatus: guardSnapshot.createRoomGuardStatus,
+      createRoomGuardApplies: guardSnapshot.createRoomGuardApplies,
+      createRoomThresholdRatio: guardSnapshot.createRoomThresholdRatio,
+      relayTrafficWindowMs: relayTrafficSnapshot.windowMs,
+      relayTrafficBytesInWindow: relayTrafficSnapshot.totalBytesInWindow,
+      relayActiveRooms: relayTrafficSnapshot.activeRooms,
+      relayActiveHosts: relayTrafficSnapshot.activeHosts,
+      relayActiveClients: relayTrafficSnapshot.activeClients,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.patch("/server-admin/settings", (req, res, next) => {
+  try {
+    requireServerAdminSession(req);
+    const body = req.body as {
+      displayName?: string;
+      publicListingEnabled?: boolean;
+      bandwidthCapacityMbps?: number | null;
+      announcements?: unknown;
+    } | undefined;
+    const settings = serverAdminStateStore.updateSettings({
+      displayName: typeof body?.displayName === "string" ? body.displayName : "",
+      publicListingEnabled: Boolean(body?.publicListingEnabled),
+      bandwidthCapacityMbps: optionalPositiveNumber(body?.bandwidthCapacityMbps, "bandwidthCapacityMbps", 100_000),
+      announcements: body?.announcements,
+    });
+    void serverRegistrySync.runNow();
+    const guardSnapshot = getCreateRoomGuardSnapshot();
+    const relayTrafficSnapshot = relayManager.getTrafficSnapshot();
+    res.json({
+      ...settings,
+      registryBaseUrl: env.serverRegistryBaseUrl,
+      publicBaseUrl: env.serverRegistryPublicBaseUrl,
+      publicWsUrl: env.serverRegistryPublicWsUrl,
+      bandwidthProbeUrl: env.serverRegistryBandwidthProbeUrl,
+      currentBandwidthMbps: guardSnapshot.currentBandwidthMbps,
+      resolvedCapacityMbps: guardSnapshot.resolvedCapacityMbps,
+      bandwidthUtilizationRatio: guardSnapshot.bandwidthUtilizationRatio,
+      capacitySource: guardSnapshot.capacitySource,
+      createRoomGuardStatus: guardSnapshot.createRoomGuardStatus,
+      createRoomGuardApplies: guardSnapshot.createRoomGuardApplies,
+      createRoomThresholdRatio: guardSnapshot.createRoomThresholdRatio,
+      relayTrafficWindowMs: relayTrafficSnapshot.windowMs,
+      relayTrafficBytesInWindow: relayTrafficSnapshot.totalBytesInWindow,
+      relayActiveRooms: relayTrafficSnapshot.activeRooms,
+      relayActiveHosts: relayTrafficSnapshot.activeHosts,
+      relayActiveClients: relayTrafficSnapshot.activeClients,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
   if (error instanceof LobbyStoreError) {
     res.status(error.statusCode).json({
@@ -271,6 +474,14 @@ app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
   if (error instanceof InputError) {
     res.status(400).json({
       code: "invalid_request",
+      message: error.message,
+    });
+    return;
+  }
+
+  if (error instanceof HttpError) {
+    res.status(error.statusCode).json({
+      code: error.code,
       message: error.message,
     });
     return;
@@ -376,6 +587,7 @@ wss.on("connection", (socket, req) => {
 
 const cleanupInterval = setInterval(() => {
   cleanupExpiredRoomsNow();
+  cleanupExpiredServerAdminSessions();
 
   const staleThreshold = Date.now() - env.heartbeatTimeoutMs;
   for (const peers of roomPeers.values()) {
@@ -392,12 +604,27 @@ const cleanupInterval = setInterval(() => {
     }
   }
 }, 5000);
+const serverRegistrySyncInterval = setInterval(() => {
+  void serverRegistrySync.runNow();
+}, env.serverRegistrySyncIntervalMs);
 
 server.listen(env.port, env.host, () => {
   console.log(`[lobby] listening on http://${env.host}:${env.port} (ws path ${env.wsPath})`);
   console.log(
     `[relay] enabled udp://${env.relayBindHost}:${env.relayPortStart}-${env.relayPortEnd} publicHost=${env.relayPublicHost || "<request-host>"}`,
   );
+  console.log(`[server-admin] panel ready at http://${env.host}:${env.port}/server-admin`);
+  if (isServerAdminConfigured()) {
+    console.log(`[server-admin] login enabled for ${env.serverAdminUsername}`);
+  } else {
+    console.log("[server-admin] login disabled until SERVER_ADMIN_PASSWORD_HASH and SERVER_ADMIN_SESSION_SECRET are configured");
+  }
+  if (env.serverRegistryBaseUrl) {
+    console.log(`[server-admin] registry sync target ${env.serverRegistryBaseUrl}`);
+    void serverRegistrySync.runNow();
+  } else {
+    console.log("[server-admin] registry sync disabled until SERVER_REGISTRY_BASE_URL is configured");
+  }
 });
 
 function addPeer(peer: ControlPeer) {
@@ -484,6 +711,83 @@ function requestIp(req: Request) {
   return req.socket.remoteAddress ?? "";
 }
 
+function parseCookies(header: string | undefined) {
+  const cookies: Record<string, string> = {};
+  if (!header) {
+    return cookies;
+  }
+
+  for (const segment of header.split(";")) {
+    const separatorIndex = segment.indexOf("=");
+    if (separatorIndex <= 0) {
+      continue;
+    }
+
+    const key = segment.slice(0, separatorIndex).trim();
+    const value = segment.slice(separatorIndex + 1).trim();
+    if (key) {
+      cookies[key] = value;
+    }
+  }
+
+  return cookies;
+}
+
+function isServerAdminConfigured() {
+  return Boolean(env.serverAdminPasswordHash && env.serverAdminSessionSecret);
+}
+
+function ensureServerAdminConfigured() {
+  if (!isServerAdminConfigured()) {
+    throw new HttpError(503, "server_admin_not_configured", "子面板账号尚未配置。");
+  }
+}
+
+function createServerAdminSession(username: string) {
+  const session: ServerAdminSession = {
+    id: `session_${randomUUID()}`,
+    username,
+    expiresAt: Date.now() + env.serverAdminSessionTtlMs,
+  };
+  serverAdminSessions.set(session.id, session);
+  return session;
+}
+
+function cleanupExpiredServerAdminSessions(now = Date.now()) {
+  for (const [sessionId, session] of serverAdminSessions.entries()) {
+    if (session.expiresAt <= now) {
+      serverAdminSessions.delete(sessionId);
+    }
+  }
+}
+
+function requireServerAdminSession(req: Request) {
+  ensureServerAdminConfigured();
+  cleanupExpiredServerAdminSessions();
+  const cookies = parseCookies(req.headers.cookie);
+  const sessionId = verifySignedServerAdminSession(cookies.sts2_server_admin_session, env.serverAdminSessionSecret!);
+  if (!sessionId) {
+    throw new HttpError(401, "server_admin_auth_required", "请先登录子面板。");
+  }
+
+  const session = serverAdminSessions.get(sessionId);
+  if (!session || session.expiresAt <= Date.now()) {
+    serverAdminSessions.delete(sessionId);
+    throw new HttpError(401, "server_admin_auth_required", "请先登录子面板。");
+  }
+
+  return session;
+}
+
+function setServerAdminCookie(res: Response, sessionId: string) {
+  const token = signServerAdminSession(sessionId, env.serverAdminSessionSecret!);
+  res.setHeader("Set-Cookie", `sts2_server_admin_session=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.floor(env.serverAdminSessionTtlMs / 1000)}`);
+}
+
+function clearServerAdminCookie(res: Response) {
+  res.setHeader("Set-Cookie", "sts2_server_admin_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0");
+}
+
 function resolveAdvertisedRelayHost(req: Request) {
   if (env.relayPublicHost.trim()) {
     return env.relayPublicHost.trim();
@@ -501,6 +805,54 @@ function resolveAdvertisedRelayHost(req: Request) {
   }
 }
 
+async function streamZeroBytes(res: Response, totalBytes: number) {
+  const chunk = Buffer.alloc(64 * 1024, 0);
+  let remaining = totalBytes;
+  while (remaining > 0) {
+    const nextLength = Math.min(chunk.length, remaining);
+    const canContinue = res.write(chunk.subarray(0, nextLength));
+    remaining -= nextLength;
+    if (!canContinue) {
+      await once(res, "drain");
+    }
+  }
+  res.end();
+}
+
+function buildRegistryPublicBaseUrl() {
+  const host = process.env.RELAY_PUBLIC_HOST?.trim()
+    || (process.env.HOST?.trim() && process.env.HOST !== "0.0.0.0" ? process.env.HOST.trim() : "127.0.0.1");
+  const port = process.env.PORT?.trim() || "8787";
+  return `http://${host}:${port}`;
+}
+
+function buildRegistryPublicWsUrl() {
+  const baseUrl = process.env.SERVER_REGISTRY_PUBLIC_BASE_URL?.trim() || buildRegistryPublicBaseUrl();
+  try {
+    const url = new URL(baseUrl);
+    const scheme = url.protocol === "https:" ? "wss:" : "ws:";
+    return `${scheme}//${url.host}/control`;
+  } catch {
+    return "ws://127.0.0.1:8787/control";
+  }
+}
+
+function buildRegistryBandwidthProbeUrl() {
+  const baseUrl = process.env.SERVER_REGISTRY_PUBLIC_BASE_URL?.trim() || buildRegistryPublicBaseUrl();
+  return `${baseUrl.replace(/\/+$/, "")}/registry/bandwidth-probe.bin`;
+}
+
+function getCreateRoomGuardSnapshot() {
+  const state = serverAdminStateStore.getState();
+  const relayTrafficSnapshot = relayManager.getTrafficSnapshot();
+  return createRoomBandwidthGuard.getSnapshot({
+    currentBandwidthMbps: relayTrafficSnapshot.currentBandwidthMbps,
+    bandwidthCapacityMbps: state.bandwidthCapacityMbps,
+    probePeak7dCapacityMbps: state.probePeak7dCapacityMbps,
+    createRoomGuardApplies: Boolean(env.serverRegistryBaseUrl && state.serverId && state.serverToken),
+  });
+}
+
 function requiredString(value: unknown, name: string) {
   if (typeof value !== "string" || value.trim() === "") {
     throw new InputError(`${name} 不能为空。`);
@@ -516,6 +868,11 @@ function optionalString(value: unknown) {
 
   const trimmed = value.trim();
   return trimmed === "" ? undefined : trimmed;
+}
+
+function optionalEnv(value: string | undefined) {
+  const normalized = value?.trim();
+  return normalized ? normalized : undefined;
 }
 
 function optionalStringArray(value: unknown) {
@@ -560,6 +917,18 @@ function positiveInt(value: unknown, name: string, min: number, max: number) {
   return value;
 }
 
+function optionalPositiveNumber(value: unknown, name: string, max: number) {
+  if (value == null) {
+    return null;
+  }
+
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0 || value > max) {
+    throw new InputError(`${name} 必须是 0-${max} 之间的正数，或留空。`);
+  }
+
+  return Math.round(value * 100) / 100;
+}
+
 function requiredQuery(url: URL, key: string) {
   const value = url.searchParams.get(key);
   if (!value || value.trim() === "") {
@@ -571,6 +940,16 @@ function requiredQuery(url: URL, key: string) {
 
 class InputError extends Error {}
 
+class HttpError extends Error {
+  constructor(
+    readonly statusCode: number,
+    readonly code: string,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
 interface ControlPeer {
   socket: WebSocket;
   roomId: string;
@@ -579,11 +958,18 @@ interface ControlPeer {
   lastSeenAt: number;
 }
 
+interface ServerAdminSession {
+  id: string;
+  username: string;
+  expiresAt: number;
+}
+
 process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
 
 function shutdown() {
   clearInterval(cleanupInterval);
+  clearInterval(serverRegistrySyncInterval);
   wss.close();
   relayManager.close();
   server.close(() => {

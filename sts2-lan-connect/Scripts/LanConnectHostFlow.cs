@@ -110,7 +110,8 @@ internal static class LanConnectHostFlow
                 publishSource: "overlay_create",
                 boundSaveKey: null,
                 savedRunInfo: null,
-                notifyOnFailure: true);
+                notifyOnFailure: true,
+                throwOnCreateGuardRejection: true);
             if (!published)
             {
                 netService.Disconnect(NetError.InternalError, now: true);
@@ -130,6 +131,10 @@ internal static class LanConnectHostFlow
         {
             netService.Disconnect(NetError.InternalError, now: true);
             GD.Print($"sts2_lan_connect host_flow: lobby create failed code={ex.Code}, status={ex.StatusCode}, message={ex.Message}");
+            if (string.Equals(ex.Code, "server_bandwidth_near_capacity", StringComparison.Ordinal))
+            {
+                throw;
+            }
             LanConnectPopupUtil.ShowInfo($"大厅服务创建房间失败：{ex.Message}");
             return false;
         }
@@ -160,7 +165,8 @@ internal static class LanConnectHostFlow
         string publishSource,
         string? boundSaveKey,
         LobbySavedRunInfo? savedRunInfo,
-        bool notifyOnFailure)
+        bool notifyOnFailure,
+        bool throwOnCreateGuardRejection = false)
     {
         string trimmedRoomName = LanConnectConfig.SanitizeRoomName(roomName);
         string? trimmedPassword = string.IsNullOrWhiteSpace(password) ? null : LanConnectConfig.SanitizeRoomPassword(password);
@@ -232,6 +238,10 @@ internal static class LanConnectHostFlow
             apiClient?.Dispose();
             GD.Print(
                 $"sts2_lan_connect host_flow: publish existing host failed source={publishSource}, code={ex.Code}, status={ex.StatusCode}, message={ex.Message}");
+            if (throwOnCreateGuardRejection && string.Equals(ex.Code, "server_bandwidth_near_capacity", StringComparison.Ordinal))
+            {
+                throw;
+            }
             if (notifyOnFailure)
             {
                 LanConnectPopupUtil.ShowInfo($"大厅服务创建房间失败：{ex.Message}");

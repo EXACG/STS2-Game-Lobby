@@ -36,6 +36,7 @@ Environment:
   STS2_MODS_DIR
   STS2_LOBBY_DEFAULT_BASE_URL
   STS2_LOBBY_DEFAULT_WS_URL
+  STS2_LOBBY_DEFAULT_REGISTRY_BASE_URL
   STS2_LOBBY_COMPATIBILITY_PROFILE
   STS2_LOBBY_CONNECTION_STRATEGY
 EOF
@@ -60,6 +61,7 @@ write_lobby_defaults() {
   local target_dir="$1"
   local base_url="${STS2_LOBBY_DEFAULT_BASE_URL:-}"
   local ws_url="${STS2_LOBBY_DEFAULT_WS_URL:-}"
+  local registry_base_url="${STS2_LOBBY_DEFAULT_REGISTRY_BASE_URL:-}"
   local compatibility_profile="${STS2_LOBBY_COMPATIBILITY_PROFILE:-}"
   local connection_strategy="${STS2_LOBBY_CONNECTION_STRATEGY:-}"
 
@@ -79,9 +81,10 @@ write_lobby_defaults() {
     cat > "$target_dir/$DEFAULTS_FILE_NAME" <<EOF
 {
   "baseUrl": "$base_url",
+  "registryBaseUrl": "${registry_base_url:-}",
   "wsUrl": "$ws_url",
   "compatibilityProfile": "${compatibility_profile:-test_relaxed}",
-  "connectionStrategy": "${connection_strategy:-relay-first}"
+  "connectionStrategy": "${connection_strategy:-relay-only}"
 }
 EOF
     return
@@ -116,6 +119,8 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+mkdir -p "$PROJECT_DIR/release"
 
 if ! mkdir "$BUILD_LOCK_DIR" 2>/dev/null; then
   die "Another sts2_lan_connect build/package step is already running. Re-run this script after the other process exits."

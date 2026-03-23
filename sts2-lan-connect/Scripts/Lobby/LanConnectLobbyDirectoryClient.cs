@@ -10,19 +10,19 @@ namespace Sts2LanConnect.Scripts;
 
 internal static class LanConnectLobbyDirectoryClient
 {
-    private const string DirectoryServersUrl = "https://sts.exacg.cc/servers/";
-
     public static async Task<IReadOnlyList<LobbyDirectoryServerEntry>> GetServersAsync(CancellationToken cancellationToken = default)
     {
+        string baseUrl = LanConnectConfig.LobbyRegistryBaseUrl;
+        Uri requestUri = new($"{baseUrl.TrimEnd('/')}/servers/");
         using HttpClient client = new()
         {
             Timeout = TimeSpan.FromSeconds(10d)
         };
 
-        GD.Print($"sts2_lan_connect directory api: GET {DirectoryServersUrl}");
-        using HttpResponseMessage response = await client.GetAsync(DirectoryServersUrl, cancellationToken);
+        GD.Print($"sts2_lan_connect directory api: GET {requestUri}");
+        using HttpResponseMessage response = await client.GetAsync(requestUri, cancellationToken);
         string text = await response.Content.ReadAsStringAsync(cancellationToken);
-        GD.Print($"sts2_lan_connect directory api: GET {DirectoryServersUrl} -> {(int)response.StatusCode}");
+        GD.Print($"sts2_lan_connect directory api: GET {requestUri} -> {(int)response.StatusCode}");
 
         if (!response.IsSuccessStatusCode)
         {

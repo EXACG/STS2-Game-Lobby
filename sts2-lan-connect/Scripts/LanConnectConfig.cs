@@ -13,6 +13,8 @@ internal sealed class LanConnectConfigData
 
     public string LobbyServerBaseUrl { get; set; } = string.Empty;
 
+    public string LobbyRegistryBaseUrl { get; set; } = string.Empty;
+
     public string LastRoomName { get; set; } = string.Empty;
 
     public string PlayerDisplayName { get; set; } = string.Empty;
@@ -86,13 +88,45 @@ internal static class LanConnectConfig
         }
     }
 
+    public static string LobbyRegistryBaseUrl
+    {
+        get
+        {
+            lock (Sync)
+            {
+                return string.IsNullOrWhiteSpace(_data.LobbyRegistryBaseUrl)
+                    ? LanConnectLobbyEndpointDefaults.GetRegistryBaseUrl()
+                    : _data.LobbyRegistryBaseUrl;
+            }
+        }
+        set
+        {
+            SetString(
+                static (data, next) => data.LobbyRegistryBaseUrl = next,
+                static data => data.LobbyRegistryBaseUrl,
+                NormalizeLobbyEndpointOverride(value));
+        }
+    }
+
+    public static string LobbyRegistryBaseUrlOverride
+    {
+        get
+        {
+            lock (Sync)
+            {
+                return _data.LobbyRegistryBaseUrl;
+            }
+        }
+    }
+
     public static bool HasLobbyServerOverrides
     {
         get
         {
             lock (Sync)
             {
-                return !string.IsNullOrWhiteSpace(_data.LobbyServerBaseUrl);
+                return !string.IsNullOrWhiteSpace(_data.LobbyServerBaseUrl)
+                    || !string.IsNullOrWhiteSpace(_data.LobbyRegistryBaseUrl);
             }
         }
     }
@@ -256,6 +290,14 @@ internal static class LanConnectConfig
         else if (LanConnectLobbyEndpointDefaults.MatchesBundledDefaultBaseUrl(_data.LobbyServerBaseUrl))
         {
             _data.LobbyServerBaseUrl = string.Empty;
+        }
+
+        if (string.Equals(
+                NormalizeLobbyEndpointOverride(_data.LobbyRegistryBaseUrl),
+                LanConnectLobbyEndpointDefaults.GetRegistryBaseUrl(),
+                StringComparison.OrdinalIgnoreCase))
+        {
+            _data.LobbyRegistryBaseUrl = string.Empty;
         }
 
         _data.LastRoomName = SanitizeRoomName(_data.LastRoomName);
