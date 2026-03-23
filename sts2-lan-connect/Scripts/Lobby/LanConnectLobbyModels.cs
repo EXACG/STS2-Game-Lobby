@@ -289,6 +289,29 @@ internal sealed class LobbyControlEnvelope
     public string? PlayerName { get; set; }
 
     public List<LobbyPlayerNameEntry>? PlayerNames { get; set; }
+
+    public string? MessageId { get; set; }
+
+    public string? MessageText { get; set; }
+
+    public long? SentAtUnixMs { get; set; }
+}
+
+internal sealed class LobbyRoomChatEntry
+{
+    public string RoomId { get; set; } = string.Empty;
+
+    public string MessageId { get; set; } = string.Empty;
+
+    public string SenderName { get; set; } = string.Empty;
+
+    public string? SenderNetId { get; set; }
+
+    public string MessageText { get; set; } = string.Empty;
+
+    public DateTimeOffset SentAt { get; set; }
+
+    public bool IsLocal { get; set; }
 }
 
 internal sealed class LobbyPlayerNameEntry

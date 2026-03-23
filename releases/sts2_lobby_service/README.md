@@ -6,8 +6,10 @@
 - 房间密码校验
 - 房主心跳与僵尸房间清理
 - 控制通道握手与广播
+- 控制通道会按房间透明广播聊天 envelope，可直接承载房间聊天
 - 向客户端返回 `ENet` 直连优先、失败时自动切 relay 的连接计划
 - 保存续局大厅房间的 `savedRun` 元数据与可接管角色槽位
+- `maxPlayers/currentPlayers` 上限已放宽，用于兼容扩展人数房间元数据
 - 在 join 前置校验里区分 `version_mismatch`、`mod_version_mismatch`、`mod_mismatch`、`room_started`、`room_full`
 - 记录 `direct_timeout` / `relay_success` / `relay_failure` 等连接阶段日志
 - 内置子服务器控制面板 `/server-admin`

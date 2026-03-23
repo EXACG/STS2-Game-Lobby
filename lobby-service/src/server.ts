@@ -20,6 +20,8 @@ import {
   type JoinRoomInput,
 } from "./store.js";
 
+const MaxLobbyPlayers = 256;
+
 const env = {
   host: process.env.HOST ?? "0.0.0.0",
   port: Number.parseInt(process.env.PORT ?? "8787", 10),
@@ -193,7 +195,7 @@ app.post("/rooms", (req, res, next) => {
       version: requiredString(body?.version, "version"),
       modVersion: requiredString(body?.modVersion, "modVersion"),
       modList: optionalStringArray(body?.modList),
-      maxPlayers: positiveInt(body?.maxPlayers, "maxPlayers", 1, 8),
+      maxPlayers: positiveInt(body?.maxPlayers, "maxPlayers", 1, MaxLobbyPlayers),
       hostConnectionInfo: {
         enetPort: positiveInt(body?.hostConnectionInfo?.enetPort, "hostConnectionInfo.enetPort", 1, 65535),
         localAddresses: Array.isArray(body?.hostConnectionInfo?.localAddresses)
@@ -290,7 +292,7 @@ app.post("/rooms/:id/heartbeat", (req, res, next) => {
     const body = req.body as Partial<HeartbeatInput> | undefined;
     const room = store.heartbeat(req.params.id, {
       hostToken: requiredString(body?.hostToken, "hostToken"),
-      currentPlayers: positiveInt(body?.currentPlayers, "currentPlayers", 1, 8),
+      currentPlayers: positiveInt(body?.currentPlayers, "currentPlayers", 1, MaxLobbyPlayers),
       status: requiredString(body?.status, "status"),
       connectedPlayerNetIds: Array.isArray(body?.connectedPlayerNetIds)
         ? body.connectedPlayerNetIds
