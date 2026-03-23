@@ -39,10 +39,11 @@ internal static class LanConnectHostFlow
     {
         loadingOverlay.Visible = true;
         NetHostGameService netService = new();
+        int maxPlayers = LanConnectMultiplayerCompatibility.GetEffectiveMaxPlayers();
 
         try
         {
-            NetErrorInfo? error = netService.StartENetHost(LanConnectConstants.DefaultPort, LanConnectConstants.DefaultMaxPlayers);
+            NetErrorInfo? error = netService.StartENetHost(LanConnectConstants.DefaultPort, maxPlayers);
             if (error.HasValue)
             {
                 NErrorPopup? popup = NErrorPopup.Create(error.Value);
@@ -54,7 +55,7 @@ internal static class LanConnectHostFlow
                 return;
             }
 
-            PushHostScreen(gameMode, stack, netService);
+            PushHostScreen(gameMode, stack, netService, maxPlayers);
 
             await Task.Yield();
             string ip = LanConnectNetUtil.GetPrimaryLanAddress();
@@ -80,6 +81,7 @@ internal static class LanConnectHostFlow
     {
         loadingOverlay.Visible = true;
         NetHostGameService netService = new();
+        int maxPlayers = LanConnectMultiplayerCompatibility.GetEffectiveMaxPlayers();
         string lobbyGameMode = LanConnectMultiplayerSaveRoomBinding.GetLobbyGameMode(gameMode);
         string gameModeLabel = LanConnectMultiplayerSaveRoomBinding.GetLobbyGameModeLabel(gameMode);
 
@@ -88,7 +90,7 @@ internal static class LanConnectHostFlow
 
         try
         {
-            NetErrorInfo? error = netService.StartENetHost(LanConnectConstants.DefaultPort, LanConnectConstants.DefaultMaxPlayers);
+            NetErrorInfo? error = netService.StartENetHost(LanConnectConstants.DefaultPort, maxPlayers);
             if (error.HasValue)
             {
                 GD.Print($"sts2_lan_connect host_flow: ENet host failed with {error.Value}");
@@ -110,6 +112,7 @@ internal static class LanConnectHostFlow
                 publishSource: "overlay_create",
                 boundSaveKey: null,
                 savedRunInfo: null,
+                maxPlayers,
                 notifyOnFailure: true,
                 throwOnCreateGuardRejection: true);
             if (!published)
@@ -118,7 +121,7 @@ internal static class LanConnectHostFlow
                 return false;
             }
 
-            PushHostScreen(gameMode, stack, netService);
+            PushHostScreen(gameMode, stack, netService, maxPlayers);
             await Task.Yield();
 
             string primaryAddress = LanConnectNetUtil.GetPrimaryLanAddress();
@@ -165,6 +168,7 @@ internal static class LanConnectHostFlow
         string publishSource,
         string? boundSaveKey,
         LobbySavedRunInfo? savedRunInfo,
+        int maxPlayers,
         bool notifyOnFailure,
         bool throwOnCreateGuardRejection = false)
     {
@@ -190,7 +194,7 @@ internal static class LanConnectHostFlow
                 Version = LanConnectBuildInfo.GetGameVersion(),
                 ModVersion = LanConnectBuildInfo.GetModVersion(),
                 ModList = LanConnectBuildInfo.GetModList(),
-                MaxPlayers = LanConnectConstants.DefaultMaxPlayers,
+                MaxPlayers = maxPlayers,
                 HostConnectionInfo = new LobbyHostConnectionInfo
                 {
                     EnetPort = LanConnectConstants.DefaultPort,
@@ -266,14 +270,14 @@ internal static class LanConnectHostFlow
         }
     }
 
-    private static void PushHostScreen(GameMode gameMode, NSubmenuStack stack, NetHostGameService netService)
+    private static void PushHostScreen(GameMode gameMode, NSubmenuStack stack, NetHostGameService netService, int maxPlayers)
     {
         switch (gameMode)
         {
             case GameMode.Standard:
             {
                 NCharacterSelectScreen submenu = stack.GetSubmenuType<NCharacterSelectScreen>();
-                submenu.InitializeMultiplayerAsHost(netService, LanConnectConstants.DefaultMaxPlayers);
+                submenu.InitializeMultiplayerAsHost(netService, maxPlayers);
                 stack.Push(submenu);
                 break;
             }
@@ -287,7 +291,7 @@ internal static class LanConnectHostFlow
             default:
             {
                 NCustomRunScreen submenu = stack.GetSubmenuType<NCustomRunScreen>();
-                submenu.InitializeMultiplayerAsHost(netService, LanConnectConstants.DefaultMaxPlayers);
+                submenu.InitializeMultiplayerAsHost(netService, maxPlayers);
                 stack.Push(submenu);
                 break;
             }

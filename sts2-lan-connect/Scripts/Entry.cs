@@ -9,7 +9,9 @@ public static class Entry
     public static void Init()
     {
         LanConnectConfig.Load();
+        LanConnectMultiplayerCompatibility.Initialize();
         LanConnectLobbyRuntime.Install();
+        LanConnectRoomChatOverlay.Install();
         LanConnectRuntimeMonitor.Install();
         Log.Info("sts2_lan_connect initialized with runtime monitor.");
     }
