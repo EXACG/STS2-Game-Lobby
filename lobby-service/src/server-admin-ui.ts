@@ -157,6 +157,7 @@ export function renderServerAdminPage() {
           Tag,
           Typography,
           message,
+          notification,
         } = antd;
         const { Title, Paragraph, Text } = Typography;
         const TextArea = Input.TextArea;
@@ -190,19 +191,354 @@ export function renderServerAdminPage() {
           }
         }
 
-        function renderSyncTag(value) {
+        function getSyncMeta(value) {
           const mapping = {
-            heartbeat_ok: ["success", "同步正常"],
-            approved: ["processing", "已获批"],
-            pending_review: ["warning", "待审核"],
-            rejected: ["error", "已拒绝"],
-            sync_failed: ["error", "同步失败"],
-            listing_disabled: ["default", "未公开"],
-            registry_disabled: ["default", "未配置母面板"],
-            idle: ["default", "待操作"],
+            heartbeat_ok: {
+              tagColor: "success",
+              tagLabel: "已在公开列表",
+              toastType: "success",
+              toastTitle: "公开列表同步正常",
+              toastDescription: "这台子服务器已经在公开列表中持续同步。",
+            },
+            approved: {
+              tagColor: "processing",
+              tagLabel: "已获批",
+              toastType: "success",
+              toastTitle: "公开申请已获批",
+              toastDescription: "母面板已签发服务器令牌，正在进入公开列表。",
+            },
+            submission_created: {
+              tagColor: "processing",
+              tagLabel: "申请已提交",
+              toastType: "info",
+              toastTitle: "公开申请已发出",
+              toastDescription: "母面板已返回申请编号，等待进一步审核。",
+            },
+            pending_review: {
+              tagColor: "warning",
+              tagLabel: "待审核",
+              toastType: "info",
+              toastTitle: "公开申请待审核",
+              toastDescription: "申请已经提交，母面板暂未返回审核结果。",
+            },
+            rejected: {
+              tagColor: "error",
+              tagLabel: "已拒绝",
+              toastType: "warning",
+              toastTitle: "公开申请被拒绝",
+              toastDescription: "请根据审核备注调整配置后重新提交。",
+            },
+            submission_failed: {
+              tagColor: "error",
+              tagLabel: "申请发送失败",
+              toastType: "error",
+              toastTitle: "公开申请未发出",
+              toastDescription: "子服务器向母面板发起申请时失败，请检查母面板地址和网络连通性。",
+            },
+            claim_failed: {
+              tagColor: "warning",
+              tagLabel: "审核状态获取失败",
+              toastType: "warning",
+              toastTitle: "申请已提交，但状态确认失败",
+              toastDescription: "子服务器已经拿到申请编号，但暂时无法从母面板获取审核结果。",
+            },
+            heartbeat_failed: {
+              tagColor: "warning",
+              tagLabel: "公开同步失败",
+              toastType: "warning",
+              toastTitle: "公开列表同步失败",
+              toastDescription: "子服务器可能已经获批，但当前公开列表心跳同步失败。",
+            },
+            public_endpoint_invalid: {
+              tagColor: "error",
+              tagLabel: "公网地址无效",
+              toastType: "error",
+              toastTitle: "公网地址配置错误",
+              toastDescription: "当前上报给母面板的地址不是公网可达地址，母面板无法接收这台子服务器。",
+            },
+            listing_disable_failed: {
+              tagColor: "warning",
+              tagLabel: "取消公开失败",
+              toastType: "warning",
+              toastTitle: "取消公开同步失败",
+              toastDescription: "子服务器通知母面板下线时失败，稍后会继续重试。",
+            },
+            sync_failed: {
+              tagColor: "error",
+              tagLabel: "同步失败",
+              toastType: "error",
+              toastTitle: "同步失败",
+              toastDescription: "发生未分类的同步错误，请检查最近错误和服务端日志。",
+            },
+            listing_disabled: {
+              tagColor: "default",
+              tagLabel: "未公开",
+            },
+            registry_disabled: {
+              tagColor: "default",
+              tagLabel: "未配置母面板",
+              toastType: "warning",
+              toastTitle: "未配置母面板地址",
+              toastDescription: "SERVER_REGISTRY_BASE_URL 未配置，公开申请不会发出。",
+            },
+            idle: {
+              tagColor: "default",
+              tagLabel: "未申请",
+            },
           };
-          const item = mapping[value] || ["default", value || "未知"];
-          return h(Tag, { color: item[0] }, item[1]);
+          return mapping[value] || {
+            tagColor: "default",
+            tagLabel: value || "未知",
+          };
+        }
+
+        function renderSyncTag(value) {
+          const meta = getSyncMeta(value);
+          return h(Tag, { color: meta.tagColor }, meta.tagLabel);
+        }
+
+        function getListingStateMeta(settings) {
+          if (!settings) {
+            return {
+              tagColor: "default",
+              tagLabel: "未知",
+              alertType: "info",
+              description: "正在读取公开申请状态。",
+            };
+          }
+
+          const syncStatus = settings.lastSyncStatus || "idle";
+          if (!settings.publicListingEnabled) {
+            if (syncStatus === "listing_disable_failed") {
+              return {
+                tagColor: "warning",
+                tagLabel: "关闭公开失败",
+                alertType: "warning",
+                description: "你已经关闭了公开开关，但子服务器通知母面板下线时失败，稍后会继续重试。",
+              };
+            }
+
+            if (settings.serverId || settings.submissionId || syncStatus === "listing_disabled") {
+              return {
+                tagColor: "default",
+                tagLabel: "已关闭公开",
+                alertType: "info",
+                description: "公开申请开关已关闭，这台子服务器不会显示在公开列表中。",
+              };
+            }
+
+            return {
+              tagColor: "default",
+              tagLabel: "未申请",
+              alertType: "info",
+              description: "当前尚未向母面板发起公开申请。",
+            };
+          }
+
+          if (syncStatus === "submission_created") {
+            return {
+              tagColor: "processing",
+              tagLabel: "已提交申请",
+              alertType: "info",
+              description: "申请已经成功发到母面板，等待母面板进一步审核。",
+            };
+          }
+
+          if (syncStatus === "pending_review") {
+            return {
+              tagColor: "warning",
+              tagLabel: "待审核",
+              alertType: "warning",
+              description: "申请已提交，但母面板暂未返回审核结果。",
+            };
+          }
+
+          if (syncStatus === "rejected") {
+            return {
+              tagColor: "error",
+              tagLabel: "已拒绝",
+              alertType: "error",
+              description: settings.lastReviewNote || "母面板拒绝了这次公开申请。",
+            };
+          }
+
+          if (syncStatus === "heartbeat_ok") {
+            return {
+              tagColor: "success",
+              tagLabel: "已加入公开列表",
+              alertType: "success",
+              description: "母面板已经接收并持续同步这台子服务器，它应当出现在公开列表中。",
+            };
+          }
+
+          if (syncStatus === "approved") {
+            return {
+              tagColor: "processing",
+              tagLabel: "已获批，等待同步",
+              alertType: "info",
+              description: "母面板已经签发服务器令牌，正在把这台子服务器加入公开列表。",
+            };
+          }
+
+          if (syncStatus === "heartbeat_failed") {
+            return {
+              tagColor: "warning",
+              tagLabel: settings.serverId || settings.hasServerToken ? "已获批，同步异常" : "公开同步失败",
+              alertType: "warning",
+              description: settings.lastSyncError || "子服务器和母面板之间的公开列表同步失败。",
+            };
+          }
+
+          if (syncStatus === "submission_failed") {
+            return {
+              tagColor: "error",
+              tagLabel: "申请未发出",
+              alertType: "error",
+              description: settings.lastSyncError || "子服务器向母面板发起申请时失败。",
+            };
+          }
+
+          if (syncStatus === "claim_failed") {
+            return {
+              tagColor: "warning",
+              tagLabel: "申请已提交，状态确认失败",
+              alertType: "warning",
+              description: settings.lastSyncError || "子服务器已经保存申请编号，但暂时无法从母面板确认审核结果。",
+            };
+          }
+
+          if (syncStatus === "public_endpoint_invalid") {
+            return {
+              tagColor: "error",
+              tagLabel: "公网地址配置错误",
+              alertType: "error",
+              description: settings.lastSyncError || "当前上报给母面板的地址不是公网可达地址。",
+            };
+          }
+
+          if (syncStatus === "registry_disabled") {
+            return {
+              tagColor: "warning",
+              tagLabel: "未配置母面板",
+              alertType: "warning",
+              description: "SERVER_REGISTRY_BASE_URL 未配置，公开申请不会发出。",
+            };
+          }
+
+          if (syncStatus === "sync_failed") {
+            return {
+              tagColor: "error",
+              tagLabel: "同步失败",
+              alertType: "error",
+              description: settings.lastSyncError || "发生未分类的同步错误，请检查日志。",
+            };
+          }
+
+          if (settings.submissionId && !settings.serverId) {
+            return {
+              tagColor: "warning",
+              tagLabel: "已申请，待审核",
+              alertType: "warning",
+              description: "子服务器已经拿到申请编号，等待母面板返回审核结果。",
+            };
+          }
+
+          if (settings.serverId && settings.hasServerToken) {
+            return {
+              tagColor: "processing",
+              tagLabel: "已获批",
+              alertType: "info",
+              description: "母面板已经签发服务器令牌，等待首轮心跳同步。",
+            };
+          }
+
+          return {
+            tagColor: "processing",
+            tagLabel: "准备申请",
+            alertType: "info",
+            description: "公开申请已经启用，子服务器正在进行首轮同步。",
+          };
+        }
+
+        function renderListingStateTag(settings) {
+          const meta = getListingStateMeta(settings);
+          return h(Tag, { color: meta.tagColor }, meta.tagLabel);
+        }
+
+        function buildStatusAlert(settings) {
+          const meta = getListingStateMeta(settings);
+          return {
+            type: meta.alertType,
+            message: "申请状态：" + meta.tagLabel,
+            description: h(
+              Space,
+              { direction: "vertical", size: 2 },
+              h("span", null, meta.description),
+              settings && settings.lastSyncError
+                ? h(Text, { type: "secondary" }, "最近错误：" + settings.lastSyncError)
+                : null,
+              settings && settings.lastReviewNote
+                ? h(Text, { type: "secondary" }, "审核备注：" + settings.lastReviewNote)
+                : null,
+            ),
+          };
+        }
+
+        function buildSyncSignature(settings) {
+          if (!settings) {
+            return "";
+          }
+
+          return [
+            settings.publicListingEnabled ? "1" : "0",
+            settings.lastSyncStatus || "",
+            settings.lastSyncError || "",
+            settings.lastReviewNote || "",
+            settings.submissionId || "",
+            settings.serverId || "",
+            settings.hasServerToken ? "1" : "0",
+          ].join("|");
+        }
+
+        function notifySyncState(next, previous, source) {
+          const meta = getSyncMeta(next.lastSyncStatus || "idle");
+          if (!meta.toastType || !meta.toastTitle) {
+            return;
+          }
+
+          const previousSignature = buildSyncSignature(previous);
+          const nextSignature = buildSyncSignature(next);
+          if (previousSignature === nextSignature) {
+            return;
+          }
+
+          if (!previous && meta.toastType !== "error" && meta.toastType !== "warning") {
+            return;
+          }
+
+          if (source === "save" && meta.toastType === "info") {
+            return;
+          }
+
+          let description = meta.toastDescription || "";
+          if (next.lastSyncError && (meta.toastType === "error" || meta.toastType === "warning")) {
+            description = description
+              ? description + " 最近错误：" + next.lastSyncError
+              : next.lastSyncError;
+          }
+
+          if (next.lastReviewNote && next.lastSyncStatus === "rejected") {
+            description = description
+              ? description + " 审核备注：" + next.lastReviewNote
+              : next.lastReviewNote;
+          }
+
+          notification[meta.toastType]({
+            message: meta.toastTitle,
+            description: description || undefined,
+            placement: "topRight",
+            duration: meta.toastType === "error" ? 8 : 6,
+          });
         }
 
         function renderGuardTag(value, applies) {
@@ -309,33 +645,57 @@ export function renderServerAdminPage() {
           const [saveLoading, setSaveLoading] = React.useState(false);
           const [loginForm] = Form.useForm();
           const [settingsForm] = Form.useForm();
+          const settingsRef = React.useRef(null);
+          const statusAlert = settings ? buildStatusAlert(settings) : null;
 
-          const refreshSettings = React.useCallback(async function () {
+          const applySettingsSnapshot = React.useCallback(function (next, source) {
+            const previous = settingsRef.current;
+            settingsRef.current = next;
+            setSettings(next);
+            setAnnouncements(normalizeAnnouncements(next.announcements));
+            settingsForm.setFieldsValue({
+              displayName: next.displayName || "",
+              publicListingEnabled: Boolean(next.publicListingEnabled),
+              bandwidthCapacityMbps: next.bandwidthCapacityMbps,
+            });
+            notifySyncState(next, previous, source || "refresh");
+          }, [settingsForm]);
+
+          const refreshSettings = React.useCallback(async function (options) {
+            const source = options && options.source ? options.source : "refresh";
             setSettingsLoading(true);
             try {
               const next = await readJson("/server-admin/settings");
-              setSettings(next);
-              setAnnouncements(normalizeAnnouncements(next.announcements));
-              settingsForm.setFieldsValue({
-                displayName: next.displayName || "",
-                publicListingEnabled: Boolean(next.publicListingEnabled),
-                bandwidthCapacityMbps: next.bandwidthCapacityMbps,
-              });
+              applySettingsSnapshot(next, source);
+            } catch (error) {
+              if (source === "poll") {
+                notification.warning({
+                  message: "状态刷新失败",
+                  description: (error && error.message) ? error.message : "无法读取当前控制台状态。",
+                  placement: "topRight",
+                  duration: 5,
+                });
+              } else if (source === "manual") {
+                message.error((error && error.message) ? error.message : "状态刷新失败");
+              } else {
+                throw error;
+              }
             } finally {
               setSettingsLoading(false);
             }
-          }, [settingsForm]);
+          }, [applySettingsSnapshot]);
 
           const refreshSession = React.useCallback(async function () {
             setBooting(true);
             try {
               const nextSession = await readJson("/server-admin/session");
               setSession(nextSession);
-              await refreshSettings();
+              await refreshSettings({ source: "initial" });
             } catch (_error) {
               setSession(null);
               setSettings(null);
               setAnnouncements([]);
+              settingsRef.current = null;
             } finally {
               setBooting(false);
             }
@@ -344,6 +704,20 @@ export function renderServerAdminPage() {
           React.useEffect(function () {
             void refreshSession();
           }, [refreshSession]);
+
+          React.useEffect(function () {
+            if (!session) {
+              return;
+            }
+
+            const timer = setInterval(function () {
+              void refreshSettings({ source: "poll" });
+            }, 15000);
+
+            return function () {
+              clearInterval(timer);
+            };
+          }, [session, refreshSettings]);
 
           async function handleLogin(values) {
             setLoginLoading(true);
@@ -369,6 +743,7 @@ export function renderServerAdminPage() {
             setSession(null);
             setSettings(null);
             setAnnouncements([]);
+            settingsRef.current = null;
             message.success("已退出登录");
           }
 
@@ -383,13 +758,7 @@ export function renderServerAdminPage() {
                   announcements: announcements,
                 }),
               });
-              setSettings(next);
-              setAnnouncements(normalizeAnnouncements(next.announcements));
-              settingsForm.setFieldsValue({
-                displayName: next.displayName || "",
-                publicListingEnabled: Boolean(next.publicListingEnabled),
-                bandwidthCapacityMbps: next.bandwidthCapacityMbps,
-              });
+              applySettingsSnapshot(next, "save");
               message.success("设置已保存");
             } catch (error) {
               message.error(error.message || "保存失败");
@@ -540,10 +909,10 @@ export function renderServerAdminPage() {
                           Space,
                           { direction: "vertical", size: 20, style: { width: "100%" } },
                           h(Alert, {
-                            type: settings.publicListingEnabled ? "success" : "info",
+                            type: statusAlert ? statusAlert.type : "info",
                             showIcon: true,
-                            message: settings.publicListingEnabled ? "当前服务器已申请加入公开列表" : "当前服务器未申请加入公开列表",
-                            description: "保存后会在下一次同步周期自动和公共服务器控制台对齐。",
+                            message: statusAlert ? statusAlert.message : "申请状态读取中",
+                            description: statusAlert ? statusAlert.description : "正在读取当前公开申请状态。",
                           }),
                             h(
                               Form,
@@ -582,7 +951,7 @@ export function renderServerAdminPage() {
                                 Space,
                                 { size: 12 },
                                 h(Button, { type: "primary", htmlType: "submit", loading: saveLoading }, "保存设置"),
-                                h(Button, { onClick: function () { void refreshSettings(); }, loading: settingsLoading }, "刷新状态")
+                                h(Button, { onClick: function () { void refreshSettings({ source: "manual" }); }, loading: settingsLoading }, "刷新状态")
                               )
                             )
                           )
@@ -714,6 +1083,8 @@ export function renderServerAdminPage() {
                       h(
                         Descriptions,
                         { bordered: true, size: "middle", column: 1, className: "status-block" },
+                        h(Descriptions.Item, { label: "申请状态" }, renderListingStateTag(settings)),
+                        h(Descriptions.Item, { label: "状态说明" }, getListingStateMeta(settings).description),
                         h(Descriptions.Item, { label: "同步状态" }, renderSyncTag(settings.lastSyncStatus || "idle")),
                         h(Descriptions.Item, { label: "建房保护" }, renderGuardTag(settings.createRoomGuardStatus || "unknown", Boolean(settings.createRoomGuardApplies))),
                         h(Descriptions.Item, { label: "当前带宽" }, formatMbps(settings.currentBandwidthMbps)),

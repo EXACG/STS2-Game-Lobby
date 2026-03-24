@@ -57,24 +57,47 @@ async function runSyncCycle(options: ServerRegistrySyncOptions) {
 
   try {
     if (current.publicListingEnabled) {
-      assertPublicRegistryEndpointsReachable(env);
+      try {
+        assertPublicRegistryEndpointsReachable(env);
+      } catch (error) {
+        stateStore.patch({
+          lastSyncAt: now,
+          lastSyncStatus: "public_endpoint_invalid",
+          lastSyncError: error instanceof Error ? error.message : "invalid_public_endpoint",
+        });
+        return;
+      }
     }
 
     if (!current.publicListingEnabled) {
       if (current.serverId && current.serverToken) {
-        const response = await sendHeartbeat(options, {
-          displayName: resolveDisplayName(current.displayName, env.publicBaseUrl),
-          publicListingEnabled: false,
-          roomCount: getRoomCount(),
-          baseUrl: env.publicBaseUrl,
-          wsUrl: env.publicWsUrl,
-          bandwidthProbeUrl: env.bandwidthProbeUrl,
-          bandwidthCapacityMbps: current.bandwidthCapacityMbps,
-          currentBandwidthMbps: guardSnapshot.currentBandwidthMbps,
-          bandwidthUtilizationRatio: guardSnapshot.bandwidthUtilizationRatio,
-          createRoomGuardStatus: guardSnapshot.createRoomGuardStatus,
-          capacitySource: guardSnapshot.capacitySource,
-        });
+        let response: {
+          probePeak7dCapacityMbps?: number;
+          resolvedCapacityMbps?: number;
+          capacitySource?: string;
+        };
+        try {
+          response = await sendHeartbeat(options, {
+            displayName: resolveDisplayName(current.displayName, env.publicBaseUrl),
+            publicListingEnabled: false,
+            roomCount: getRoomCount(),
+            baseUrl: env.publicBaseUrl,
+            wsUrl: env.publicWsUrl,
+            bandwidthProbeUrl: env.bandwidthProbeUrl,
+            bandwidthCapacityMbps: current.bandwidthCapacityMbps,
+            currentBandwidthMbps: guardSnapshot.currentBandwidthMbps,
+            bandwidthUtilizationRatio: guardSnapshot.bandwidthUtilizationRatio,
+            createRoomGuardStatus: guardSnapshot.createRoomGuardStatus,
+            capacitySource: guardSnapshot.capacitySource,
+          });
+        } catch (error) {
+          stateStore.patch({
+            lastSyncAt: now,
+            lastSyncStatus: "listing_disable_failed",
+            lastSyncError: error instanceof Error ? error.message : "listing_disable_failed",
+          });
+          return;
+        }
         stateStore.patch({
           lastSyncAt: now,
           lastSyncStatus: "listing_disabled",
@@ -97,23 +120,45 @@ async function runSyncCycle(options: ServerRegistrySyncOptions) {
 
     if (!current.serverId || !current.serverToken) {
       if (!current.submissionId || !current.submissionClaimSecret) {
-        const created = await createSubmission(options, {
-          displayName: resolveDisplayName(current.displayName, env.publicBaseUrl),
-          baseUrl: env.publicBaseUrl,
-          wsUrl: env.publicWsUrl,
-          bandwidthProbeUrl: env.bandwidthProbeUrl,
-        });
+        let created: { submissionId: string; submissionClaimSecret: string };
+        try {
+          created = await createSubmission(options, {
+            displayName: resolveDisplayName(current.displayName, env.publicBaseUrl),
+            baseUrl: env.publicBaseUrl,
+            wsUrl: env.publicWsUrl,
+            bandwidthProbeUrl: env.bandwidthProbeUrl,
+          });
+        } catch (error) {
+          stateStore.patch({
+            lastSyncAt: now,
+            lastSyncStatus: "submission_failed",
+            lastSyncError: error instanceof Error ? error.message : "submission_failed",
+          });
+          return;
+        }
         stateStore.patch({
           submissionId: created.submissionId,
           submissionClaimSecret: created.submissionClaimSecret,
           lastSyncAt: now,
-          lastSyncStatus: "pending_review",
+          lastSyncStatus: "submission_created",
           lastSyncError: "",
+          lastReviewNote: "",
         });
         return;
       }
 
-      const claimed = await claimSubmission(options, current.submissionId, current.submissionClaimSecret);
+      let claimed: { status: string; reviewNote?: string; serverId?: string; serverToken?: string };
+      try {
+        claimed = await claimSubmission(options, current.submissionId, current.submissionClaimSecret);
+      } catch (error) {
+        stateStore.patch({
+          lastSyncAt: now,
+          lastSyncStatus: "claim_failed",
+          lastSyncError: error instanceof Error ? error.message : "claim_failed",
+        });
+        return;
+      }
+
       if (claimed.status === "approved" && claimed.serverId && claimed.serverToken) {
         stateStore.patch({
           serverId: claimed.serverId,
@@ -123,6 +168,36 @@ async function runSyncCycle(options: ServerRegistrySyncOptions) {
           lastSyncError: "",
           lastReviewNote: claimed.reviewNote ?? "",
         });
+
+        try {
+          const response = await sendHeartbeat(options, {
+            displayName: resolveDisplayName(current.displayName, env.publicBaseUrl),
+            publicListingEnabled: true,
+            roomCount: getRoomCount(),
+            baseUrl: env.publicBaseUrl,
+            wsUrl: env.publicWsUrl,
+            bandwidthProbeUrl: env.bandwidthProbeUrl,
+            bandwidthCapacityMbps: current.bandwidthCapacityMbps,
+            currentBandwidthMbps: guardSnapshot.currentBandwidthMbps,
+            bandwidthUtilizationRatio: guardSnapshot.bandwidthUtilizationRatio,
+            createRoomGuardStatus: guardSnapshot.createRoomGuardStatus,
+            capacitySource: guardSnapshot.capacitySource,
+          });
+          stateStore.patch({
+            lastSyncAt: now,
+            lastSyncStatus: "heartbeat_ok",
+            lastSyncError: "",
+            probePeak7dCapacityMbps: response.probePeak7dCapacityMbps ?? null,
+            resolvedCapacityMbps: response.resolvedCapacityMbps ?? null,
+            capacitySource: response.capacitySource ?? "unknown",
+          });
+        } catch (error) {
+          stateStore.patch({
+            lastSyncAt: now,
+            lastSyncStatus: "heartbeat_failed",
+            lastSyncError: error instanceof Error ? error.message : "heartbeat_failed",
+          });
+        }
       } else if (claimed.status === "rejected") {
         stateStore.patch({
           lastSyncAt: now,
@@ -140,19 +215,33 @@ async function runSyncCycle(options: ServerRegistrySyncOptions) {
       return;
     }
 
-    const response = await sendHeartbeat(options, {
-      displayName: resolveDisplayName(current.displayName, env.publicBaseUrl),
-      publicListingEnabled: true,
-      roomCount: getRoomCount(),
-      baseUrl: env.publicBaseUrl,
-      wsUrl: env.publicWsUrl,
-      bandwidthProbeUrl: env.bandwidthProbeUrl,
-      bandwidthCapacityMbps: current.bandwidthCapacityMbps,
-      currentBandwidthMbps: guardSnapshot.currentBandwidthMbps,
-      bandwidthUtilizationRatio: guardSnapshot.bandwidthUtilizationRatio,
-      createRoomGuardStatus: guardSnapshot.createRoomGuardStatus,
-      capacitySource: guardSnapshot.capacitySource,
-    });
+    let response: {
+      resolvedCapacityMbps?: number;
+      probePeak7dCapacityMbps?: number;
+      capacitySource?: string;
+    };
+    try {
+      response = await sendHeartbeat(options, {
+        displayName: resolveDisplayName(current.displayName, env.publicBaseUrl),
+        publicListingEnabled: true,
+        roomCount: getRoomCount(),
+        baseUrl: env.publicBaseUrl,
+        wsUrl: env.publicWsUrl,
+        bandwidthProbeUrl: env.bandwidthProbeUrl,
+        bandwidthCapacityMbps: current.bandwidthCapacityMbps,
+        currentBandwidthMbps: guardSnapshot.currentBandwidthMbps,
+        bandwidthUtilizationRatio: guardSnapshot.bandwidthUtilizationRatio,
+        createRoomGuardStatus: guardSnapshot.createRoomGuardStatus,
+        capacitySource: guardSnapshot.capacitySource,
+      });
+    } catch (error) {
+      stateStore.patch({
+        lastSyncAt: now,
+        lastSyncStatus: "heartbeat_failed",
+        lastSyncError: error instanceof Error ? error.message : "heartbeat_failed",
+      });
+      return;
+    }
     stateStore.patch({
       lastSyncAt: now,
       lastSyncStatus: "heartbeat_ok",

@@ -172,7 +172,8 @@ sudo ./install-lobby-service-linux.sh --install-dir /opt/sts2-lobby
 
 - 不是只有 `systemd` 才会出问题，Docker 也一样会出问题
 - 真正的关键不是“是不是 Docker”，而是“上报给母面板的公网地址是否可达”
-- 当前版本已经补了显式校验：如果公开申请上报的是本机地址，`/server-admin` 会直接显示 `sync_failed`
+- 当前版本已经补了显式校验：如果公开申请上报的是本机地址，`/server-admin` 会直接显示 `公网地址配置错误`
+- `/server-admin` 现在会显式展示 `未申请`、`已提交待审`、`已加入公开列表`、`已拒绝`、`申请发送失败`、`同步失败` 等状态，并对异常弹出提醒
 
 如果你不想接入官方公开列表，可以清空：
 

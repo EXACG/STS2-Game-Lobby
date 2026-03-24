@@ -422,7 +422,7 @@ app.get("/server-admin/settings", (req, res, next) => {
 });
 
 app.patch("/server-admin/settings", (req, res, next) => {
-  try {
+  (async () => {
     requireServerAdminSession(req);
     const body = req.body as {
       displayName?: string;
@@ -436,7 +436,7 @@ app.patch("/server-admin/settings", (req, res, next) => {
       bandwidthCapacityMbps: optionalPositiveNumber(body?.bandwidthCapacityMbps, "bandwidthCapacityMbps", 100_000),
       announcements: body?.announcements,
     });
-    void serverRegistrySync.runNow();
+    await serverRegistrySync.runNow();
     const guardSnapshot = getCreateRoomGuardSnapshot();
     const relayTrafficSnapshot = relayManager.getTrafficSnapshot();
     res.json({
@@ -458,9 +458,9 @@ app.patch("/server-admin/settings", (req, res, next) => {
       relayActiveHosts: relayTrafficSnapshot.activeHosts,
       relayActiveClients: relayTrafficSnapshot.activeClients,
     });
-  } catch (error) {
+  })().catch((error) => {
     next(error);
-  }
+  });
 });
 
 app.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
