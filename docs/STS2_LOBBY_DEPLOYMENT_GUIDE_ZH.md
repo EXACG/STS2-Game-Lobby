@@ -57,6 +57,50 @@ curl http://127.0.0.1:8787/health
 curl http://127.0.0.1:8787/probe
 ```
 
+如果你准备让这台 `systemd` 子服务进入官方公开列表，建议首次安装时直接写上公网主机名：
+
+```bash
+sudo ./scripts/install-lobby-service-linux.sh \
+  --install-dir /opt/sts2-lobby \
+  --relay-public-host <你的公网 IP 或域名>
+```
+
+这样安装脚本会自动补出：
+
+- `SERVER_REGISTRY_PUBLIC_BASE_URL`
+- `SERVER_REGISTRY_PUBLIC_WS_URL`
+- `SERVER_REGISTRY_BANDWIDTH_PROBE_URL`
+
+如果你已经安装完了，也可以后补 `/opt/sts2-lobby/lobby-service/.env`，至少保证下面二选一：
+
+- 配 `RELAY_PUBLIC_HOST=<公网 IP 或域名>`
+- 或显式填写全部 `SERVER_REGISTRY_PUBLIC_*`
+
+如果这几项都没配，子服务会把本机地址上报给母面板，母面板无法从公网反向探测。
+
+### 管理面板登录哈希怎么生成
+
+`SERVER_ADMIN_PASSWORD_HASH` 不是明文密码，必须填 `salt:hash`。
+
+仓库自带生成脚本：
+
+```bash
+cd lobby-service
+npm run hash-admin-password -- '你的面板密码'
+```
+
+把输出整串填进 `.env`：
+
+```text
+SERVER_ADMIN_PASSWORD_HASH=<上一步输出的整串内容>
+```
+
+`SERVER_ADMIN_SESSION_SECRET` 可以这样生成：
+
+```bash
+node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
+```
+
 ### 对外页面如何打开
 
 如果这台子服务已经绑定了公网 IP 或域名，并且安全组 / 防火墙已经放行 `8787/TCP`，外部浏览器可直接访问：
@@ -110,12 +154,25 @@ sudo ./install-lobby-service-linux.sh --install-dir /opt/sts2-lobby
 如果你使用仓库默认配置或安装脚本默认配置：
 
 - `SERVER_REGISTRY_BASE_URL` 会默认写成 `http://47.111.146.69:18787`
+- 这只表示“申请发往哪台母面板”，不表示母面板就一定能访问到你的子服务
 - 当你在 `/server-admin` 里打开“公开列表申请”后，子服务会自动：
   - 创建申请
   - claim 审核结果
   - 按固定周期发送心跳
 
-也就是说，第 1 个问题的结论是：现在已经会自动发送申请，不需要额外改逻辑。
+要让公开申请真正成立，还必须保证母面板能拿到这台子服的公网地址：
+
+- `SERVER_REGISTRY_PUBLIC_BASE_URL`
+- `SERVER_REGISTRY_PUBLIC_WS_URL`
+- `SERVER_REGISTRY_BANDWIDTH_PROBE_URL`
+
+如果这三项留空，服务端会优先尝试从 `RELAY_PUBLIC_HOST` 推导；如果连 `RELAY_PUBLIC_HOST` 也没配，就会退回 `127.0.0.1` / `0.0.0.0` 这种本机绑定地址。
+
+因此第 2 个问题的结论是：
+
+- 不是只有 `systemd` 才会出问题，Docker 也一样会出问题
+- 真正的关键不是“是不是 Docker”，而是“上报给母面板的公网地址是否可达”
+- 当前版本已经补了显式校验：如果公开申请上报的是本机地址，`/server-admin` 会直接显示 `sync_failed`
 
 如果你不想接入官方公开列表，可以清空：
 
@@ -124,6 +181,24 @@ SERVER_REGISTRY_BASE_URL=
 ```
 
 或者直接不要打开 `/server-admin` 里的“公开列表申请”。
+
+### Docker 方式的额外说明
+
+Docker 并不会自动替你填公网地址。
+
+如果你使用：
+
+- `deploy/lobby-service.docker.env.example`
+- `deploy/docker-compose.lobby-service.yml`
+
+仍然需要把下面这些占位值改成真实公网 IP / 域名：
+
+- `RELAY_PUBLIC_HOST`
+- `SERVER_REGISTRY_PUBLIC_BASE_URL`
+- `SERVER_REGISTRY_PUBLIC_WS_URL`
+- `SERVER_REGISTRY_BANDWIDTH_PROBE_URL`
+
+如果你用了反向代理、HTTPS 或非 `8787` 外部端口，也要按真实外网地址手动改，不要保留默认值。
 
 ### 线上故障记录
 

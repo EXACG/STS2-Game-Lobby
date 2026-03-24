@@ -56,6 +56,10 @@ async function runSyncCycle(options: ServerRegistrySyncOptions) {
   }
 
   try {
+    if (current.publicListingEnabled) {
+      assertPublicRegistryEndpointsReachable(env);
+    }
+
     if (!current.publicListingEnabled) {
       if (current.serverId && current.serverToken) {
         const response = await sendHeartbeat(options, {
@@ -163,6 +167,32 @@ async function runSyncCycle(options: ServerRegistrySyncOptions) {
       lastSyncStatus: "sync_failed",
       lastSyncError: error instanceof Error ? error.message : "unknown_sync_error",
     });
+  }
+}
+
+function assertPublicRegistryEndpointsReachable(env: ServerRegistrySyncEnv) {
+  assertReachablePublicUrl("SERVER_REGISTRY_PUBLIC_BASE_URL", env.publicBaseUrl, ["http:", "https:"]);
+  assertReachablePublicUrl("SERVER_REGISTRY_PUBLIC_WS_URL", env.publicWsUrl, ["ws:", "wss:"]);
+  assertReachablePublicUrl("SERVER_REGISTRY_BANDWIDTH_PROBE_URL", env.bandwidthProbeUrl, ["http:", "https:"]);
+}
+
+function assertReachablePublicUrl(name: string, rawUrl: string, allowedProtocols: string[]) {
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl);
+  } catch {
+    throw new Error(`${name} 不是合法 URL：${rawUrl}`);
+  }
+
+  if (!allowedProtocols.includes(parsed.protocol)) {
+    throw new Error(`${name} 必须使用 ${allowedProtocols.join(" / ")}：${rawUrl}`);
+  }
+
+  const hostname = parsed.hostname.trim().toLowerCase();
+  if (hostname === "" || hostname === "localhost" || hostname === "127.0.0.1" || hostname === "0.0.0.0" || hostname === "::1") {
+    throw new Error(
+      `${name} 当前指向 ${parsed.hostname || "<empty>"}，母面板无法从公网访问这台子服。请改成公网 IP 或域名，或配置 RELAY_PUBLIC_HOST / SERVER_REGISTRY_PUBLIC_*。`,
+    );
   }
 }
 

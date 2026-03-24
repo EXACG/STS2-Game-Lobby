@@ -27,6 +27,7 @@ verify_package_manifest() {
   require_file "$package_dir/lobby-service/package-lock.json"
   require_file "$package_dir/lobby-service/tsconfig.json"
   require_file "$package_dir/lobby-service/.env.example"
+  require_file "$package_dir/lobby-service/scripts/generate-server-admin-password-hash.mjs"
   require_file "$package_dir/lobby-service/src/server.ts"
   require_file "$package_dir/lobby-service/src/server-admin-state.ts"
   require_file "$package_dir/lobby-service/src/server-admin-ui.ts"
@@ -52,6 +53,10 @@ verify_zip_manifest() {
     echo "Service zip is missing .env.example" >&2
     exit 1
   }
+  [[ "$zip_listing" == *"$PACKAGE_NAME/lobby-service/scripts/generate-server-admin-password-hash.mjs"* ]] || {
+    echo "Service zip is missing generate-server-admin-password-hash.mjs" >&2
+    exit 1
+  }
   [[ "$zip_listing" == *"$PACKAGE_NAME/lobby-service/src/server-admin-state.ts"* ]] || {
     echo "Service zip is missing server-admin-state.ts" >&2
     exit 1
@@ -73,6 +78,7 @@ cp "$SOURCE_DIR/tsconfig.json" "$PACKAGE_ROOT/lobby-service/"
 cp "$SOURCE_DIR/.env.example" "$PACKAGE_ROOT/lobby-service/"
 cp "$SOURCE_DIR/Dockerfile" "$PACKAGE_ROOT/lobby-service/"
 cp "$SOURCE_DIR/.dockerignore" "$PACKAGE_ROOT/lobby-service/"
+cp -R "$SOURCE_DIR/scripts" "$PACKAGE_ROOT/lobby-service/"
 cp -R "$SOURCE_DIR/deploy" "$PACKAGE_ROOT/lobby-service/"
 cp "$SOURCE_DIR/README.md" "$PACKAGE_ROOT/README.md"
 cp "$INSTALLER" "$PACKAGE_ROOT/"

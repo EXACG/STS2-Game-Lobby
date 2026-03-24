@@ -46,6 +46,11 @@ docker compose -f deploy/docker-compose.lobby-service.yml up -d
 
 如果部署机器拉 Docker Hub 很慢，可以先复制 `deploy/.env.example` 为 `deploy/.env`，再把 `STS2_NODE_IMAGE` 改成国内镜像。
 
+注意：
+
+- Docker 方式也一样需要把 `RELAY_PUBLIC_HOST` 或 `SERVER_REGISTRY_PUBLIC_*` 改成公网 IP / 域名
+- 这三个 `SERVER_REGISTRY_PUBLIC_*` 不是 Docker 自动推导出来的；如果它们仍是 `127.0.0.1`、`0.0.0.0`、`localhost` 或占位值，母面板无法反向探测这台子服
+
 日志维护默认由 Docker `json-file` 轮转处理：
 
 - `10MB` 单文件上限
@@ -72,6 +77,56 @@ sudo ./scripts/install-lobby-service-linux.sh --install-dir /opt/sts2-lobby
 
 ```bash
 curl http://127.0.0.1:8787/health
+```
+
+如果你准备让这台 `systemd` 子服务进入官方公开列表，建议首次安装时直接带上公网主机名：
+
+```bash
+sudo ./scripts/install-lobby-service-linux.sh \
+  --install-dir /opt/sts2-lobby \
+  --relay-public-host <你的公网 IP 或域名>
+```
+
+这样安装脚本会自动把 `SERVER_REGISTRY_PUBLIC_BASE_URL`、`SERVER_REGISTRY_PUBLIC_WS_URL`、`SERVER_REGISTRY_BANDWIDTH_PROBE_URL` 写成同一套公网地址。
+
+如果你已经装好了，再手动编辑：
+
+- `/opt/sts2-lobby/lobby-service/.env`
+
+至少保证下面两种方式之一成立：
+
+- 方式 A：配置 `RELAY_PUBLIC_HOST=<公网 IP 或域名>`
+- 方式 B：显式配置全部 `SERVER_REGISTRY_PUBLIC_*`
+
+否则子面板虽然可能仍能向母面板发出申请请求，但母面板回头探测时拿到的是本机地址，公开申请就会失败。
+
+## 生成 SERVER_ADMIN_PASSWORD_HASH
+
+`SERVER_ADMIN_PASSWORD_HASH` 不是明文密码，格式是 `salt:hash`。
+
+仓库已经内置了生成脚本：
+
+```bash
+cd lobby-service
+npm run hash-admin-password -- '你的面板密码'
+```
+
+输出结果直接填进 `.env`：
+
+```text
+SERVER_ADMIN_PASSWORD_HASH=<上一步输出的整串内容>
+```
+
+会话密钥可以单独生成：
+
+```bash
+node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
+```
+
+再填入：
+
+```text
+SERVER_ADMIN_SESSION_SECRET=<上一步输出的随机字符串>
 ```
 
 ## 外部页面怎么打开
@@ -176,9 +231,11 @@ npm start
 - 当前公开服部署默认使用 `relay-only`；如果要回到其他策略，请显式覆盖 `CONNECTION_STRATEGY`
 - `SERVER_ADMIN_*` 控制子面板登录，不配置密码哈希和会话密钥时，`/server-admin` 页面仍可打开，但无法登录修改设置
 - `SERVER_ADMIN_STATE_FILE` 默认保存这台子服的显示名称、公开设置、公告配置和同步状态
-- `SERVER_REGISTRY_BASE_URL` 指向母面板地址；当前公开配置默认写成官方母面板 `http://47.111.146.69:18787`
+- `SERVER_REGISTRY_BASE_URL` 只负责“把申请和心跳发到哪台母面板”；当前默认写成官方母面板 `http://47.111.146.69:18787`
 - 只要 `/server-admin` 里打开了“公开列表申请”，子服务就会自动创建申请、自动 claim 审核结果，并持续同步心跳
 - `SERVER_REGISTRY_PUBLIC_*` 用于告诉母面板“这台子服务器对外的 HTTP / WS / 带宽探针地址”
+- 如果 `SERVER_REGISTRY_PUBLIC_*` 留空，服务端会先尝试用 `RELAY_PUBLIC_HOST` 推导；如果连 `RELAY_PUBLIC_HOST` 也没配，最终会退回本机地址，母面板无法从公网访问
+- 现在如果你打开了公开申请，但上报地址仍是 `127.0.0.1`、`0.0.0.0`、`localhost` 这类本机地址，子面板会直接把同步状态标成 `sync_failed`
 
 ## API
 

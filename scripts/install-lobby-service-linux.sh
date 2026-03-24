@@ -67,7 +67,8 @@ Options:
   --relay-bind-host <value>
                         RELAY_BIND_HOST written into .env. Default: same as --host
   --relay-public-host <value>
-                        RELAY_PUBLIC_HOST written into .env. Default: empty, service uses request host
+                        RELAY_PUBLIC_HOST written into .env. Default: empty, service uses request host.
+                        When SERVER_REGISTRY_PUBLIC_* are empty, this value is also used to derive public registry URLs.
   --relay-port-start <value>
                         RELAY_PORT_START written into .env. Default: 39000
   --relay-port-end <value>
@@ -99,6 +100,15 @@ log() {
 die() {
   printf '[sts2-lobby-service] ERROR: %s\n' "$*" >&2
   exit 1
+}
+
+format_host_for_url() {
+  local host="$1"
+  if [[ "$host" == *:* && "$host" != \[*\] ]]; then
+    printf '[%s]' "$host"
+  else
+    printf '%s' "$host"
+  fi
 }
 
 while [[ $# -gt 0 ]]; do
@@ -194,6 +204,24 @@ done
 node_major="$("$NODE_BIN" -p 'process.versions.node.split(".")[0]')"
 if [[ "$node_major" -lt 20 ]]; then
   die "Node.js 20+ is required. Current version: $("$NODE_BIN" -v)"
+fi
+
+if [[ -n "$RELAY_PUBLIC_HOST" ]]; then
+  PUBLIC_URL_HOST="$(format_host_for_url "$RELAY_PUBLIC_HOST")"
+  if [[ -z "$SERVER_REGISTRY_PUBLIC_BASE_URL" ]]; then
+    SERVER_REGISTRY_PUBLIC_BASE_URL="http://$PUBLIC_URL_HOST:$PORT"
+  fi
+  if [[ -z "$SERVER_REGISTRY_PUBLIC_WS_URL" ]]; then
+    SERVER_REGISTRY_PUBLIC_WS_URL="ws://$PUBLIC_URL_HOST:$PORT$WS_PATH"
+  fi
+  if [[ -z "$SERVER_REGISTRY_BANDWIDTH_PROBE_URL" ]]; then
+    SERVER_REGISTRY_BANDWIDTH_PROBE_URL="http://$PUBLIC_URL_HOST:$PORT/registry/bandwidth-probe.bin"
+  fi
+fi
+
+if [[ -n "$SERVER_REGISTRY_BASE_URL" && -z "$RELAY_PUBLIC_HOST" && -z "$SERVER_REGISTRY_PUBLIC_BASE_URL" ]]; then
+  log "WARNING: public listing is enabled by default, but neither RELAY_PUBLIC_HOST nor SERVER_REGISTRY_PUBLIC_BASE_URL is set."
+  log "WARNING: the service will fall back to 127.0.0.1 for registry probing unless you set a public IP/domain in the .env file."
 fi
 
 APP_DIR="$INSTALL_DIR/lobby-service"

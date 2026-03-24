@@ -105,7 +105,13 @@ sudo ./scripts/install-lobby-service-linux.sh --install-dir /opt/sts2-lobby
 
 - `SERVER_REGISTRY_BASE_URL=http://47.111.146.69:18787`
 
-然后在 `/server-admin` 面板里打开“公开列表申请”。当前逻辑会自动创建申请、自动 claim 审核结果，并持续同步心跳。
+然后在 `/server-admin` 面板里打开“公开列表申请”。
+
+注意这里还要再满足一条：
+
+- 这台子服务必须把 `RELAY_PUBLIC_HOST` 或 `SERVER_REGISTRY_PUBLIC_*` 配成公网 IP / 域名
+
+因为 `SERVER_REGISTRY_BASE_URL` 只表示“申请发给哪台母面板”，不表示母面板就能反向探测到你的子服务。当前逻辑会自动创建申请、自动 claim 审核结果，并持续同步心跳；但如果上报出去的是 `127.0.0.1`、`0.0.0.0`、`localhost` 这种本机地址，子面板会直接显示同步失败。
 
 ### 5. 同步公开仓库
 
